@@ -184,6 +184,88 @@ export class AttackFx {
   }
 
   /**
+   * Ground-pound landing impact. Different from the slash/finisher pair
+   * because the affordance is "I just slammed into the floor", not "I
+   * swung a blade". Stack:
+   *
+   *   1. Wide low ring shockwave (centered at the player's feet),
+   *      expanding outward — bigger and flatter than a finisher ring so
+   *      it reads as a horizontal blast wave.
+   *   2. Twin horizontal dust streaks shooting LEFT and RIGHT from feet
+   *      — gives the impact a tangible "out from under me" radial
+   *      direction without having to spawn particles.
+   *   3. Brief screen flash, same alpha as the finisher's, so the kid
+   *      gets the same "snap" cue as a heavy-hit landing.
+   *
+   * `feetY` is world-Y of the impact line (player.body.bottom). Stateless
+   * and ephemeral, same lifecycle as slash() / finisher().
+   */
+  poundImpact(originX: number, feetY: number, team: AttackTeam): void {
+    const c = COLORS[team];
+
+    // Wide low ring — squashed vertically so it reads as a ground-level
+    // shockwave instead of a sphere blast.
+    const ring = this.scene.add.ellipse(originX, feetY, 60, 22, 0, 0);
+    ring.setStrokeStyle(5, c.glow, 0.95);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    ring.setDepth(905);
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 5.0,
+      scaleY: 3.5,
+      alpha: 0,
+      duration: 380,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    // Horizontal dust streaks — left + right.
+    for (const dir of [-1, 1] as const) {
+      const streak = this.scene.add.rectangle(
+        originX + dir * 36,
+        feetY - 6,
+        70,
+        12,
+        c.core,
+        0.85,
+      );
+      streak.setBlendMode(Phaser.BlendModes.ADD);
+      streak.setDepth(906);
+      this.scene.tweens.add({
+        targets: streak,
+        x: originX + dir * 130,
+        scaleX: 2.4,
+        scaleY: 0.4,
+        alpha: 0,
+        duration: 260,
+        ease: 'Quad.easeOut',
+        onComplete: () => streak.destroy(),
+      });
+    }
+
+    // Screen flash — same code path as finisher, less alpha.
+    const cam = this.scene.cameras.main;
+    const flash = this.scene.add.rectangle(
+      cam.scrollX + cam.width / 2,
+      cam.scrollY + cam.height / 2,
+      cam.width + 200,
+      cam.height + 200,
+      c.slash,
+      0.16,
+    );
+    flash.setBlendMode(Phaser.BlendModes.ADD);
+    flash.setDepth(902);
+    flash.setScrollFactor(0);
+    this.scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 160,
+      ease: 'Quad.easeOut',
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  /**
    * Squash-then-stretch the attacker's body to read as a swing.
    * Returns a cleanup function to call when the attack ends, in case the
    * tween outlives the attack (interrupted by hurt, etc).

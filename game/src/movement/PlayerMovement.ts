@@ -40,6 +40,11 @@ export interface MovementSnapshot {
   crouching: boolean;
   hurt: boolean;
   airJumpsRemaining: number;
+  /** True iff the player is mid-air and crouch is held — Mario-style
+   *  ground pound. The movement system clamps vy to PLAYER.poundSpeed
+   *  while this is true; consumers (Player) use it to fire impact FX
+   *  + AOE damage on the landing frame. */
+  pounding: boolean;
 }
 
 export class PlayerMovement {
@@ -71,6 +76,7 @@ export class PlayerMovement {
   private knockbackUntil = -Infinity;
 
   private crouching = false;
+  private pounding = false;
   private movementLocked = false;
 
   private findLedge?: LedgeQuery;
@@ -201,20 +207,25 @@ export class PlayerMovement {
       this.body.setGravityY(GRAVITY);
       this.applyHorizontal(dtSec, timeMs);
       this.applyJump(timeMs);
-      // Mario-style ground pound: while airborne with crouch held, force
-      // a sharp downward velocity. Doesn't fight a stronger natural
-      // descent (terminal-velocity dives unaffected). Lands hard enough
-      // that the patrol fall-kill threshold (700) is exceeded — so a
-      // pound onto an enemy turns into a kill via the existing impact
-      // damage path.
-      if (
-        !this.grounded &&
-        !knockedBack &&
-        this.input.held('crouch') &&
-        this.body.velocity.y < PLAYER.poundSpeed
-      ) {
+    }
+
+    // Mario-style ground pound — fires regardless of which branch above
+    // ran (skipped only for dashing, knockedBack, ledgeGrab — handled
+    // by their own early-returns or velocity overrides). Latches the
+    // `pounding` flag so Player.update can detect "just landed from
+    // pound" and fire AOE impact damage + FX on the grounded transition.
+    this.pounding = false;
+    if (
+      !this.grounded &&
+      !knockedBack &&
+      !dashing &&
+      !clinging &&
+      this.input.held('crouch')
+    ) {
+      if (this.body.velocity.y < PLAYER.poundSpeed) {
         this.body.setVelocityY(PLAYER.poundSpeed);
       }
+      this.pounding = true;
     }
 
     this.applyVariableJumpCutoff();
@@ -334,6 +345,7 @@ export class PlayerMovement {
       crouching: this.crouching,
       hurt,
       airJumpsRemaining: this.airJumpsRemaining,
+      pounding: this.pounding,
     };
   }
 

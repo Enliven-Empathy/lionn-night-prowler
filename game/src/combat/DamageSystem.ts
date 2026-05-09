@@ -63,6 +63,38 @@ export class DamageSystem {
     }
   }
 
+  /**
+   * AOE damage helper. Applies a damage event to every alive combatant
+   * on a different team whose hurtbox overlaps `rect`. Bypasses the
+   * Hitbox class — used by attacks that aren't a normal swing-with-
+   * startup-active-recovery (e.g. ground-pound landing impact).
+   *
+   * No "alreadyHit" tracking: callers should call this once per impact
+   * and not re-fire while the rect is still around. (One frame is
+   * enough — every overlapping target takes damage that tick.)
+   */
+  testRect(
+    rect: Phaser.Geom.Rectangle,
+    attackerTeam: import('./types').Team,
+    event: Omit<DamageEvent, 'team'>,
+    timeMs: number,
+  ): void {
+    for (const target of this.combatants.values()) {
+      if (target.team === attackerTeam) continue;
+      if (!target.isAlive()) continue;
+      const hurt = target.hurtbox();
+      if (!hurt) continue;
+      if (!Phaser.Geom.Intersects.RectangleToRectangle(rect, hurt)) continue;
+      const fullEvent: DamageEvent = { ...event, team: attackerTeam };
+      target.takeDamage(fullEvent, timeMs);
+      const hitPoint = {
+        x: (Math.max(rect.x, hurt.x) + Math.min(rect.right, hurt.right)) / 2,
+        y: (Math.max(rect.y, hurt.y) + Math.min(rect.bottom, hurt.bottom)) / 2,
+      };
+      for (const l of this.hitListeners) l(fullEvent, target, hitPoint);
+    }
+  }
+
   combatantCount(): number {
     return this.combatants.size;
   }

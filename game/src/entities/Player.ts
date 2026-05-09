@@ -136,6 +136,18 @@ export class Player {
     // (feet on ground) — only the top edge drops. Visual squash matches.
     this.applyCrouchResize(snap.crouching);
 
+    // Ground-pound landing impact: when the previous tick had pounding=true
+    // and we've just become grounded this tick, fire AOE damage + FX +
+    // shake/hitstop. Prev-snap nullity is handled implicitly (first frame
+    // of the run can't satisfy "was pounding && was airborne" anyway).
+    if (
+      this.prevSnap?.pounding === true &&
+      this.prevSnap.grounded === false &&
+      snap.grounded === true
+    ) {
+      this.executePoundImpact(timeMs);
+    }
+
     // SFX from movement-state transitions: detect edges by comparing to last frame.
     this.emitMovementSfx(snap);
 
@@ -252,6 +264,53 @@ export class Player {
 
   setDebugHitboxes(visible: boolean): void {
     this.hitbox.setDebugVisible(visible);
+  }
+
+  /**
+   * Ground-pound landing: AOE damage + heavy impact FX. Called from
+   * Player.update when the snapshot transition is "was pounding +
+   * airborne → now grounded".
+   *
+   * AOE rect: 160 px wide × 60 px tall, centered horizontally on the
+   * body and vertically straddling the feet (extends 30 px above / 30 px
+   * below body.bottom). Wide enough to catch enemies the player landed
+   * NEXT to, not just directly under.
+   *
+   * Damage 3 — between claw_2 (1) and claw_3 (4). Knockback launches
+   * straight up (-380) so chained impacts can be set up. Hitstop 180 ms
+   * makes the impact land with weight.
+   */
+  private executePoundImpact(timeMs: number): void {
+    const aoeW = 160;
+    const aoeH = 60;
+    const cx = this.body.x + this.body.width / 2;
+    const feetY = this.body.y + this.body.height;
+    const aoeRect = new Phaser.Geom.Rectangle(
+      cx - aoeW / 2,
+      feetY - aoeH / 2,
+      aoeW,
+      aoeH,
+    );
+
+    this.damage.testRect(
+      aoeRect,
+      'player',
+      {
+        damage: 3,
+        fromX: cx,
+        fromY: feetY,
+        knockbackX: 0,
+        knockbackY: -380,
+        hitstopMs: 180,
+        attackName: 'pound_impact',
+      },
+      timeMs,
+    );
+
+    this.attackFx.poundImpact(cx, feetY, 'player');
+    this.fx.shake(220, 0.022);
+    this.fx.hitPause(140, timeMs);
+    this.audio.play(SFX.PLAYER_SHADOW_POUNCE);
   }
 
   /**
