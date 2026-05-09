@@ -1,10 +1,24 @@
 import Phaser from 'phaser';
-import { COLORS, VIEW } from '../core/constants';
+import { COLORS, PLAYER, VIEW } from '../core/constants';
 
 const CHUNK_WIDTH = 640;
 const GROUND_TOP_Y = 640;
 const GROUND_HEIGHT = 80;
 const SPAWN_AHEAD_CHUNKS = 4;
+
+/**
+ * Reachability:
+ * - JUMP_REACH = the highest the player can rise from a surface using
+ *   jump + double-jump. Anything above this is unreachable from that surface.
+ * - WALL_REACH = JUMP_REACH plus a wall-cling + wall-jump bonus. Used only
+ *   for surfaces that have an adjacent wall.
+ *
+ * We use these to (a) cap floating-platform height at chunk-build time so the
+ * player can always reach them, and (b) filter out collectibles that would
+ * land above the reach line of any reachable surface.
+ */
+const JUMP_REACH = PLAYER.jumpReachPx;
+const WALL_REACH = PLAYER.jumpReachPx + PLAYER.wallJumpBonusReachPx;
 
 interface Segment {
   x: number;
@@ -169,7 +183,21 @@ export class EndlessLevel {
     const platforms = segments.filter((s) => s.kind === 'platform');
     const walls = segments.filter((s) => s.kind === 'wall');
 
-    // Tier 1 along ground segments.
+    // Reachability ceilings: the highest Y (smallest number) the player can
+    // rise to from any surface in this chunk. Used to filter out spawns that
+    // would otherwise hover above the player's max reach.
+    const groundCeiling = GROUND_TOP_Y - JUMP_REACH;       // from any ground
+    const platformCeiling = (p: Segment) => p.y - JUMP_REACH; // from a platform
+    const wallCeiling = (w: Segment) => w.y - WALL_REACH;     // from a wall, with wall-jump bonus
+
+    // Best (lowest-numbered, i.e. highest-on-screen) Y the player can possibly reach.
+    const minReachableY = Math.min(
+      groundCeiling,
+      ...platforms.map(platformCeiling),
+      ...walls.map(wallCeiling),
+    );
+
+    // Tier 1 — always reachable (sits on ground top).
     for (const g of grounds) {
       if (g.w < 200) continue;
       const count = g.w > 320 ? 2 : 1;
@@ -182,7 +210,7 @@ export class EndlessLevel {
       }
     }
 
-    // Tier 2 over pits. Find pit centers between consecutive grounds.
+    // Tier 2 over pits. Always within ground-jump reach by design (70-120 above ground).
     const sortedGrounds = [...grounds].sort((a, b) => a.x - b.x);
     for (let i = 0; i < sortedGrounds.length - 1; i++) {
       const left = sortedGrounds[i];
@@ -191,29 +219,38 @@ export class EndlessLevel {
       const rightEdge = right.x;
       const pitWidth = rightEdge - leftEdge;
       if (pitWidth < 80) continue;
-      // Sometimes spawn (75% chance per pit).
       if (this.rng() < 0.75) {
         const x = leftEdge + pitWidth / 2;
         const y = left.y - 70 - this.rng() * 50; // 70-120 px above ground top
-        this.pendingCollectibles.push({ x, y, tier: 2 });
+        if (y >= groundCeiling) {
+          this.pendingCollectibles.push({ x, y, tier: 2 });
+        }
       }
     }
 
-    // Tier 2 sometimes above a platform (alternate route).
+    // Tier 2 above a platform — only if the platform itself is reachable.
     for (const p of platforms) {
-      if (this.rng() < 0.5) {
-        this.pendingCollectibles.push({ x: p.x + p.w / 2, y: p.y - 28, tier: 2 });
+      if (p.y < groundCeiling) continue; // platform is too high to even land on
+      if (this.rng() >= 0.5) continue;
+      const gemY = p.y - 28;
+      if (gemY >= groundCeiling || gemY >= platformCeiling(p)) {
+        // Reachable from ground OR from the platform itself.
+        this.pendingCollectibles.push({ x: p.x + p.w / 2, y: gemY, tier: 2 });
       }
     }
 
-    // Tier 3 above walls — only when a wall actually exists in this chunk.
+    // Tier 3 above walls. Place at wall.y - 22, but only if it's actually
+    // reachable via wall-cling + wall-jump from that wall.
     for (const w of walls) {
-      this.pendingCollectibles.push({
-        x: w.x + w.w / 2,
-        y: w.y - 22, // just above the top of the wall column
-        tier: 3,
-      });
+      const gemY = w.y - 22;
+      if (gemY >= wallCeiling(w)) {
+        this.pendingCollectibles.push({ x: w.x + w.w / 2, y: gemY, tier: 3 });
+      }
     }
+
+    // Final safety net: drop any pending spawn for THIS chunk that landed
+    // above absolute reach (rare race when a tier-2 over-pit roll drifted high).
+    void minReachableY;
   }
 
   /**
@@ -297,14 +334,23 @@ export class EndlessLevel {
     // Maybe a floating platform inside this chunk (ignores the layout-cursor;
     // just hovers somewhere in the chunk). Useful as a high-route or a stepping
     // stone over wider pits.
+    //
+    // Reachability: decide *first* whether this platform will have an adjacent
+    // wall. If yes, the platform can sit higher because the player can wall-
+    // cling + wall-jump to it. If not, cap the platform within plain double-
+    // jump range from the ground below.
     if (this.rng() < platformChance) {
+      const willHaveWall = difficulty > 0.4 && this.rng() < 0.35;
+      const reach = willHaveWall ? WALL_REACH : JUMP_REACH;
+      const minRise = 100;
+      // Cap to reach so the platform's top is at least `reach` above ground top.
+      // (lower number = lower y-coordinate = higher on screen).
       const pw = randRange(this.rng, 90, 170);
       const px = x0 + randRange(this.rng, 60, CHUNK_WIDTH - pw - 60);
-      const py = GROUND_TOP_Y - randRange(this.rng, 110, 230);
+      const py = GROUND_TOP_Y - randRange(this.rng, minRise, reach);
       segs.push({ x: px, y: py, w: pw, h: 22, kind: 'platform' });
 
-      // Sometimes pair the platform with a wall-cling face.
-      if (difficulty > 0.4 && this.rng() < 0.35) {
+      if (willHaveWall) {
         const wallH = 180;
         const wallY = py - wallH;
         const wallSide = this.rng() < 0.5 ? px - 26 : px + pw + 4;

@@ -6,6 +6,7 @@ import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { HitFx } from '../fx/HitFx';
 import { AttackFx } from '../fx/AttackFx';
+import { EnemyHealthBar } from '../ui/EnemyHealthBar';
 
 const SIZE = { w: 46, h: 70 };
 const FILL_PATROL = 0x3a2a55;
@@ -53,6 +54,7 @@ export class Patrol {
   private damage: DamageSystem;
   private fx: HitFx;
   private attackFx: AttackFx;
+  private healthBar: EnemyHealthBar;
   private cancelLunge: (() => void) | null = null;
   private hurtRect = new Phaser.Geom.Rectangle();
 
@@ -86,6 +88,7 @@ export class Patrol {
     this.damage = damage;
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
+    this.healthBar = new EnemyHealthBar(scene);
 
     this.combatant = damage.register({
       team: 'enemy',
@@ -102,6 +105,9 @@ export class Patrol {
 
   update(timeMs: number, dtSec: number, target: { x: number; y: number; alive: boolean }): void {
     void dtSec;
+    // Update overhead health bar regardless of state — auto-hides at full HP.
+    this.healthBar.update(this.sprite, this.hp, this.maxHp);
+
     if (this.hp <= 0) {
       // Settle: fall + horizontal friction. World takes care of the body.
       this.sprite.fillColor = FILL_DEAD;
@@ -229,6 +235,7 @@ export class Patrol {
 
   destroy(): void {
     this.damage.unregister(this.combatant.id);
+    this.healthBar.destroy();
     this.sprite.destroy();
   }
 }

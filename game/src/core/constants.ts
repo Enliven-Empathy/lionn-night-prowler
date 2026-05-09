@@ -35,9 +35,17 @@ export const PLAYER = {
   wallJumpVelocityY: -540,
   wallJumpLockoutMs: 180,
 
-  maxHp: 6,
+  maxHp: 10,
   hurtKnockback: { x: 220, y: -260 },
   hurtInvulnMs: 700,
+
+  // Reachability: how high above its origin the player can rise.
+  //   single jump  ½·v²/g = 570²/(2·1700) ≈ 95.6 px
+  //   double jump  + 520²/(2·1700) ≈ 79.5 px
+  //   total ~175 px — cap at 160 for a safety margin.
+  jumpReachPx: 160,
+  // Wall-jump bonus reach when a wall is adjacent (cling height + jump arc).
+  wallJumpBonusReachPx: 110,
 } as const;
 
 export const COMBAT = {

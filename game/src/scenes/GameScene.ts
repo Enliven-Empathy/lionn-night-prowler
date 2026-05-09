@@ -8,6 +8,7 @@ import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
 import { GameOverOverlay } from '../ui/GameOverOverlay';
+import { HealthBar } from '../ui/HealthBar';
 import { DamageSystem } from '../combat/DamageSystem';
 import { HitFx } from '../fx/HitFx';
 
@@ -24,6 +25,7 @@ export class GameScene extends Phaser.Scene {
   private debugOverlay!: DebugOverlay;
   private gamepadDebug!: GamepadDebug;
   private endOverlay!: GameOverOverlay;
+  private hpBar!: HealthBar;
   private debugLastToggleAt = -Infinity;
   private debugHitboxes = false;
   private damage!: DamageSystem;
@@ -81,6 +83,8 @@ export class GameScene extends Phaser.Scene {
 
     this.debugOverlay = new DebugOverlay(this);
     this.gamepadDebug = new GamepadDebug(this);
+    this.hpBar = new HealthBar(this, 24, 96);
+    this.hpBar.set(this.player.hp, this.player.maxHp);
 
     this.add.text(120, 24, 'Lionn: Night Prowler — endless courtyard  ·  Cross/Space jump x2  ·  Square/J attack  ·  R1/Shift dash  ·  G gamepad-debug', {
       fontFamily: 'Menlo, monospace',
@@ -188,6 +192,7 @@ export class GameScene extends Phaser.Scene {
 
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
+      this.hpBar.set(this.player.hp, this.player.maxHp);
     } else if (this.controls.justPressed('restart', 32)) {
       // PS Start / keyboard R routes here once the run has ended. Space + R + click
       // also work via GameOverOverlay's own listeners; this branch covers the
