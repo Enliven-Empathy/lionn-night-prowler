@@ -7,6 +7,8 @@ import { Hitbox } from '../combat/Hitbox';
 import { HitFx } from '../fx/HitFx';
 import { AttackFx } from '../fx/AttackFx';
 import { EnemyHealthBar } from '../ui/EnemyHealthBar';
+import { AudioManager } from '../audio/AudioManager';
+import { SFX } from '../audio/Sfx';
 
 const SIZE = { w: 46, h: 70 };
 const FILL_PATROL = 0x3a2a55;
@@ -55,8 +57,10 @@ export class Patrol {
   private fx: HitFx;
   private attackFx: AttackFx;
   private healthBar: EnemyHealthBar;
+  private audio: AudioManager;
   private cancelLunge: (() => void) | null = null;
   private hurtRect = new Phaser.Geom.Rectangle();
+  private prevAiState: AIState = 'patrol';
 
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
@@ -71,6 +75,7 @@ export class Patrol {
     xMax: number,
     damage: DamageSystem,
     fx: HitFx,
+    audio: AudioManager,
   ) {
     this.sprite = scene.add.rectangle(x, y, SIZE.w, SIZE.h, FILL_PATROL);
     this.sprite.setStrokeStyle(2, STROKE, 0.85);
@@ -89,6 +94,7 @@ export class Patrol {
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
     this.healthBar = new EnemyHealthBar(scene);
+    this.audio = audio;
 
     this.combatant = damage.register({
       team: 'enemy',
@@ -148,6 +154,10 @@ export class Patrol {
     }
 
     if (seesPlayer) {
+      // Alert sound on patrol → chase transition.
+      if (this.prevAiState !== 'chase' && this.prevAiState !== 'attack') {
+        this.audio.play(SFX.ENEMY_ALERT);
+      }
       this.aiState = 'chase';
       // Face the player.
       this.facing = target.x < this.sprite.x ? -1 : 1;
@@ -159,6 +169,7 @@ export class Patrol {
         this.cancelLunge?.();
         this.attackFx.telegraph(this.sprite, a.startupMs, 'enemy');
         this.cancelLunge = this.attackFx.lunge(this.sprite, a, this.facing);
+        this.audio.play(SFX.ENEMY_ATTACK_SWING);
         this.aiState = 'attack';
         this.body.setVelocityX(this.facing * 60); // slight forward drift
       } else {
@@ -179,6 +190,7 @@ export class Patrol {
 
     this.maybeUpdateAttack(timeMs);
     void this.nextThinkAt; // reserved for future stateful AI work
+    this.prevAiState = this.aiState;
   }
 
   private maybeUpdateAttack(timeMs: number): void {
@@ -207,6 +219,7 @@ export class Patrol {
     this.hitbox.deactivate();
     this.cancelLunge?.();
     this.cancelLunge = null;
+    this.audio.play(this.hp === 0 ? SFX.ENEMY_DEATH : SFX.ENEMY_HURT);
 
     const dir = this.body.center.x < event.fromX ? -1 : 1;
     this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST);

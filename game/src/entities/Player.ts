@@ -9,6 +9,8 @@ import { Combatant, DamageEvent } from '../combat/types';
 import { ATTACKS, getAttack } from '../combat/attacks';
 import { HitFx } from '../fx/HitFx';
 import { AttackFx } from '../fx/AttackFx';
+import { AudioManager } from '../audio/AudioManager';
+import { SFX, attackSwingSfx } from '../audio/Sfx';
 
 export class Player {
   readonly sprite: Phaser.GameObjects.Rectangle;
@@ -27,8 +29,10 @@ export class Player {
   private damage: DamageSystem;
   private fx: HitFx;
   private attackFx: AttackFx;
+  private audio: AudioManager;
   private cancelLunge: (() => void) | null = null;
   private hurtRectCache = new Phaser.Geom.Rectangle();
+  private prevSnap: MovementSnapshot | null = null;
 
   /** Most recent hit-point world coords from a hitbox we landed. Used to spawn slash FX. */
   lastHitPoint: { x: number; y: number } | null = null;
@@ -40,6 +44,7 @@ export class Player {
     input: InputController,
     damage: DamageSystem,
     fx: HitFx,
+    audio: AudioManager,
   ) {
     this.sprite = scene.add.rectangle(x, y, PLAYER.width, PLAYER.height, COLORS.player);
     scene.physics.add.existing(this.sprite);
@@ -54,6 +59,7 @@ export class Player {
     this.damage = damage;
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
+    this.audio = audio;
     this.hp = PLAYER.maxHp;
 
     this.combatant = damage.register({
@@ -112,6 +118,9 @@ export class Player {
 
     this.movement.update(timeMs, dtSec);
     const snap = this.movement.snapshot(timeMs);
+
+    // SFX from movement-state transitions: detect edges by comparing to last frame.
+    this.emitMovementSfx(snap);
 
     // Hitbox follows player while active.
     if (this.hitbox.active) {
@@ -186,6 +195,8 @@ export class Player {
     const facing = this.movement.getFacing();
     this.attackFx.telegraph(this.sprite, attack.startupMs, 'player');
     this.cancelLunge = this.attackFx.lunge(this.sprite, attack, facing);
+    const swing = attackSwingSfx(attack.name);
+    if (swing) this.audio.play(swing);
   }
 
   takeDamage(event: DamageEvent, timeMs: number): void {
@@ -198,6 +209,7 @@ export class Player {
     this.cancelLunge = null;
     this.fx.hitPause(event.hitstopMs, timeMs);
     this.fx.shake(160, 0.012);
+    this.audio.play(this.hp === 0 ? SFX.PLAYER_DEATH : SFX.PLAYER_HURT);
     if (this.hp === 0) {
       this.sprite.alpha = 0.4;
     }
@@ -225,6 +237,47 @@ export class Player {
     this.hitbox.setDebugVisible(visible);
   }
 
+  /**
+   * Detect movement-state edges by comparing the previous frame's snapshot
+   * to the current one, and play the matching SFX. This avoids having to
+   * thread events out of PlayerMovement; everything we need is already in
+   * the snapshot.
+   */
+  private emitMovementSfx(snap: MovementSnapshot): void {
+    const prev = this.prevSnap;
+    this.prevSnap = snap;
+    if (!prev) return;
+
+    // Dash start: not dashing → dashing.
+    if (!prev.dashing && snap.dashing) {
+      this.audio.play(SFX.PLAYER_DASH);
+      return;
+    }
+    // Wall cling start: state transition into wallCling.
+    if (prev.state !== 'wallCling' && snap.state === 'wallCling') {
+      this.audio.play(SFX.PLAYER_WALL_CLING);
+    }
+    // Wall jump: was on a wall last frame, now in air with strong upward velocity.
+    if (prev.wallSide !== 0 && snap.wallSide === 0 && snap.vy < -300) {
+      this.audio.play(SFX.PLAYER_WALL_JUMP);
+      return;
+    }
+    // Double jump: airJumpsRemaining decreased while airborne.
+    if (!prev.grounded && !snap.grounded && snap.airJumpsRemaining < prev.airJumpsRemaining) {
+      this.audio.play(SFX.PLAYER_DOUBLE_JUMP);
+      return;
+    }
+    // Ground jump: was grounded, now in air going up.
+    if (prev.grounded && !snap.grounded && snap.vy < -100) {
+      this.audio.play(SFX.PLAYER_JUMP);
+      return;
+    }
+    // Land: was airborne with downward velocity, now grounded.
+    if (!prev.grounded && snap.grounded && prev.vy > 80) {
+      this.audio.play(SFX.PLAYER_LAND);
+    }
+  }
+
   hpRatio(): number {
     return this.hp / this.maxHp;
   }
@@ -245,6 +298,7 @@ export class Player {
     this.hitbox.deactivate();
     this.sprite.alpha = 0.4;
     this.body.setVelocity(0, 0);
+    this.audio.play(SFX.PLAYER_DEATH);
   }
 
   isDead(): boolean {

@@ -27,6 +27,7 @@ export interface MovementSnapshot {
   dashing: boolean;
   crouching: boolean;
   hurt: boolean;
+  airJumpsRemaining: number;
 }
 
 export class PlayerMovement {
@@ -157,6 +158,7 @@ export class PlayerMovement {
       dashing,
       crouching: this.crouching,
       hurt,
+      airJumpsRemaining: this.airJumpsRemaining,
     };
   }
 

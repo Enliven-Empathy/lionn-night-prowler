@@ -11,6 +11,8 @@ import { GameOverOverlay } from '../ui/GameOverOverlay';
 import { HealthBar } from '../ui/HealthBar';
 import { DamageSystem } from '../combat/DamageSystem';
 import { HitFx } from '../fx/HitFx';
+import { AudioManager } from '../audio/AudioManager';
+import { SFX, attackHitSfx } from '../audio/Sfx';
 
 const WORLD_WIDTH = 1_000_000;
 const WORLD_HEIGHT = VIEW.height + 600;
@@ -30,6 +32,7 @@ export class GameScene extends Phaser.Scene {
   private debugHitboxes = false;
   private damage!: DamageSystem;
   private fx!: HitFx;
+  private audio!: AudioManager;
   private deathY = 820;
   private ended = false;
 
@@ -66,16 +69,28 @@ export class GameScene extends Phaser.Scene {
     this.controls = new InputController(this);
     this.damage = new DamageSystem();
     this.fx = new HitFx(this);
+    this.audio = new AudioManager(this);
     this.endOverlay = new GameOverOverlay(this);
+
+    // Combat hits: light/heavy variant chosen by attack name. Only player
+    // hits play this — enemy hits already trigger player_hurt via Player.takeDamage.
+    this.damage.onHit((event) => {
+      if (event.team !== 'player') return;
+      this.audio.play(attackHitSfx(event.attackName));
+    });
 
     this.level = new EndlessLevel(this).build();
     this.staticGroupRef = this.level.staticGroup;
 
-    this.player = new Player(this, this.level.spawnX, this.level.spawnY, this.controls, this.damage, this.fx);
+    this.player = new Player(this, this.level.spawnX, this.level.spawnY, this.controls, this.damage, this.fx, this.audio);
     this.physics.add.collider(this.player.sprite, this.level.staticGroup);
 
     // Drain initial enemy spawns now that the static group + collider system is ready.
     this.drainEnemySpawns();
+
+    // Kick off ambient music (auto-resumes after first user input if browser
+    // had the audio context locked).
+    this.audio.startMusic(SFX.MUSIC_COURTYARD, 0.28);
 
     this.cameras.main.setBounds(0, -300, WORLD_WIDTH, WORLD_HEIGHT + 300);
     this.cameras.main.startFollow(this.player.sprite, true, 0.15, 0.15);
@@ -198,6 +213,7 @@ export class GameScene extends Phaser.Scene {
       // also work via GameOverOverlay's own listeners; this branch covers the
       // gamepad path that the overlay can't see.
       this.controls.consumePress('restart');
+      this.audio.play(SFX.UI_RESTART);
       this.scene.restart();
     }
 
@@ -218,14 +234,25 @@ export class GameScene extends Phaser.Scene {
       this.game.registry.set('bestDistance', dist);
       this.bestDistanceText.setText(this.formatBestDistance());
     }
+    let beatBest = false;
     if (this.score > this.bestScore) {
       this.bestScore = this.score;
       this.game.registry.set('bestScore', this.score);
       this.bestScoreText.setText(this.formatBestScore());
+      beatBest = true;
+    }
+    this.audio.stopMusic();
+    this.audio.play(kind === 'gameOver' ? SFX.UI_GAME_OVER : SFX.UI_BEST_SCORE);
+    if (beatBest && kind === 'gameOver') {
+      // Layer the celebratory cue over the loss tone.
+      this.time.delayedCall(700, () => this.audio.play(SFX.UI_BEST_SCORE));
     }
     this.cameras.main.flash(180, 255, 60, 90, false);
     this.time.delayedCall(420, () => {
-      this.endOverlay.show(kind, () => this.scene.restart());
+      this.endOverlay.show(kind, () => {
+        this.audio.play(SFX.UI_RESTART);
+        this.scene.restart();
+      });
     });
   }
 
@@ -239,7 +266,7 @@ export class GameScene extends Phaser.Scene {
 
   private drainEnemySpawns(): void {
     for (const s of this.level.drainEnemySpawns()) {
-      const p = new Patrol(this, s.x, s.y, s.xMin, s.xMax, this.damage, this.fx);
+      const p = new Patrol(this, s.x, s.y, s.xMin, s.xMax, this.damage, this.fx, this.audio);
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
     }
@@ -255,6 +282,11 @@ export class GameScene extends Phaser.Scene {
     c.collect();
     this.score += c.value;
     this.scoreText.setText(`★ ${this.score}`);
+    const pickupSfx =
+      c.tier === 3 ? SFX.PICKUP_CRYSTAL :
+      c.tier === 2 ? SFX.PICKUP_GEM :
+      SFX.PICKUP_COIN;
+    this.audio.play(pickupSfx);
 
     // Brief score punch.
     this.scoreText.setScale(1.25);

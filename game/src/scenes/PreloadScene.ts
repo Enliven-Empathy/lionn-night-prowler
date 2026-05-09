@@ -18,8 +18,21 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('courtyard-wall', 'assets/backgrounds/courtyard/frames/wall_block_000.png');
     this.load.image('courtyard-platform', 'assets/backgrounds/courtyard/frames/platform_top_000.png');
 
+    // Audio manifest — drives the SFX preload below.
+    this.load.json('audio-manifest', 'assets/audio/audio-manifest.json');
+
     this.load.on('loaderror', (file: Phaser.Loader.File) => {
       console.warn(`[preload] missing asset: ${file.key} (${file.url})`);
+    });
+
+    // Stage two: once the JSON manifest is in cache, queue every audio file.
+    this.load.on('filecomplete-json-audio-manifest', () => {
+      const audioManifest = this.cache.json.get('audio-manifest') as AudioManifestEntry[] | undefined;
+      if (!audioManifest) return;
+      for (const entry of audioManifest) {
+        this.load.audio(entry.key, `assets/audio/${entry.filename}`);
+      }
+      this.load.start();
     });
   }
 
@@ -65,4 +78,11 @@ interface ManifestGroup {
 
 function shouldLoop(name: string): boolean {
   return name === 'idle' || name === 'run' || name === 'crouch' || name === 'wall_cling';
+}
+
+interface AudioManifestEntry {
+  key: string;
+  filename: string;
+  scope: string;
+  loop: boolean;
 }
