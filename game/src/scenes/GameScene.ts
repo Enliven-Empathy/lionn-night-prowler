@@ -625,10 +625,73 @@ export class GameScene extends Phaser.Scene {
 
   private drainEnemySpawns(): void {
     for (const s of this.level.drainEnemySpawns()) {
-      const p = new Patrol(this, s.x, s.y, s.xMin, s.xMax, this.damage, this.fx, this.audio);
+      const p = new Patrol(
+        this,
+        s.x,
+        s.y,
+        s.xMin,
+        s.xMax,
+        this.damage,
+        this.fx,
+        this.audio,
+        (footX, footY) => this.patrolStepHazardous(footX, footY),
+      );
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
     }
+  }
+
+  /**
+   * Returns true if a patrol foot at (footX, footY) would step into a
+   * pit (no static ground below) or onto an active spike row.
+   *
+   *   - PIT check: probe a few px below the foot point. If no static
+   *     body covers that probe, there's no ground to land on next step.
+   *   - SPIKE check: probe a few px above the ground line. If a spike
+   *     is currently dangerous and its hit-rect contains the probe,
+   *     the patrol's foot would land on emerging spikes.
+   *
+   * Cheap to call once per patrol per frame — the staticGroup has on
+   * the order of dozens of bodies and the spike list is single digits.
+   */
+  private patrolStepHazardous(footX: number, footY: number): boolean {
+    // PIT: scan static bodies for one whose top is just below the foot.
+    const groundProbeY = footY + 4;
+    let hasGround = false;
+    const children = this.staticGroupRef.getChildren();
+    for (const c of children) {
+      const b = (c as Phaser.GameObjects.GameObject & { body?: Phaser.Physics.Arcade.StaticBody }).body;
+      if (!b) continue;
+      if (
+        footX >= b.x &&
+        footX <= b.x + b.width &&
+        groundProbeY >= b.y &&
+        groundProbeY <= b.y + b.height
+      ) {
+        hasGround = true;
+        break;
+      }
+    }
+    if (!hasGround) return true;
+
+    // SPIKE: probe just above the ground line for a currently-dangerous
+    // spike row. Patrols won't refuse a *closed* spike row — that'd
+    // pin them in place forever — only the active state.
+    const spikeProbeY = footY - 8;
+    for (const s of this.spikes) {
+      if (!s.isDangerous()) continue;
+      const r = s.hitRect();
+      if (
+        footX >= r.left &&
+        footX <= r.right &&
+        spikeProbeY >= r.top &&
+        spikeProbeY <= r.bottom
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private drainCollectibleSpawns(): void {

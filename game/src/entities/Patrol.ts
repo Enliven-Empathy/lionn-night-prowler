@@ -28,6 +28,12 @@ const KNOCKBACK_RESIST = 0.55;
 
 type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead' | 'grabbed' | 'thrown';
 
+/** Look-ahead probe used by the patrol AI to refuse stepping into a pit
+ *  or onto an active spike row. The footX/footY point is where the
+ *  patrol's foot WOULD be on the next step; the probe should answer
+ *  "is that spot unsafe to walk onto" — true means abort the step. */
+export type PatrolHazardProbe = (footX: number, footY: number) => boolean;
+
 const THROW_DURATION_MS = 800;
 const THROW_DAMAGE = 2;
 /** Minimum descent vy at the moment of grounding for the impact to be
@@ -80,6 +86,11 @@ export class Patrol {
   private cancelLunge: (() => void) | null = null;
   private hurtRect = new Phaser.Geom.Rectangle();
   private prevAiState: AIState = 'patrol';
+  private hazardAhead?: PatrolHazardProbe;
+  /** Wall-clock time until which the patrol stays put after refusing to
+   *  step onto a hazard. Stops the AI from facing-flipping every frame
+   *  in front of a danger zone (which looked twitchy on screen). */
+  private hazardWaitUntilMs = 0;
 
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
@@ -95,6 +106,7 @@ export class Patrol {
     damage: DamageSystem,
     fx: HitFx,
     audio: AudioManager,
+    hazardAhead?: PatrolHazardProbe,
   ) {
     this.sprite = scene.add.rectangle(x, y, SIZE.w, SIZE.h, FILL_PATROL);
     this.sprite.setStrokeStyle(2, STROKE, 0.85);
@@ -114,6 +126,7 @@ export class Patrol {
 
     this.xMin = xMin;
     this.xMax = xMax;
+    this.hazardAhead = hazardAhead;
     this.damage = damage;
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
@@ -236,23 +249,62 @@ export class Patrol {
         this.body.setVelocityX(this.facing * 60); // slight forward drift
       } else {
         // Chase but stay within patrol bounds (don't walk off ledge).
-        const targetVx =
+        let targetVx =
           this.facing === 1 && this.sprite.x < this.xMax - 10 ? CHASE_SPEED :
           this.facing === -1 && this.sprite.x > this.xMin + 10 ? -CHASE_SPEED :
           0;
+        // Refuse to step into a pit or active spike row, even mid-chase.
+        // Better to lose the player than to walk into spikes.
+        if (targetVx !== 0 && this.isStepHazardous(this.facing)) {
+          targetVx = 0;
+          this.hazardWaitUntilMs = timeMs + 500;
+        }
         this.body.setVelocityX(targetVx);
       }
     } else {
-      // Patrol back and forth between bounds.
+      // Patrol back and forth between bounds, with hazard awareness:
+      // pits and active spikes ahead force a U-turn before the step lands.
       this.aiState = 'patrol';
       if (this.sprite.x >= this.xMax - 6) this.facing = -1;
       else if (this.sprite.x <= this.xMin + 6) this.facing = 1;
-      this.body.setVelocityX(this.facing * PATROL_SPEED);
+
+      if (this.isStepHazardous(this.facing)) {
+        // Try the other way; if it's also unsafe (e.g. perched between
+        // hazards), wait in place rather than twitch back and forth.
+        if (!this.isStepHazardous(-this.facing as 1 | -1)) {
+          this.facing = -this.facing as 1 | -1;
+        } else {
+          this.body.setVelocityX(0);
+          this.hazardWaitUntilMs = timeMs + 500;
+        }
+      }
+
+      if (timeMs < this.hazardWaitUntilMs) {
+        this.body.setVelocityX(0);
+      } else {
+        this.body.setVelocityX(this.facing * PATROL_SPEED);
+      }
     }
 
     this.maybeUpdateAttack(timeMs);
     void this.nextThinkAt; // reserved for future stateful AI work
     this.prevAiState = this.aiState;
+  }
+
+  /**
+   * Probe one step ahead of the patrol's foot in `dir` and ask the
+   * external hazard probe whether that point is unsafe. We sample at
+   * "next foot position" — slightly past the body's leading edge, at
+   * ground level — so the patrol turns BEFORE its feet leave the
+   * platform or land on a spike row. Returns false if no probe was
+   * provided (back-compat).
+   */
+  private isStepHazardous(dir: 1 | -1): boolean {
+    if (!this.hazardAhead) return false;
+    const lookAhead = this.body.width / 2 + 14;
+    const footX = this.sprite.x + dir * lookAhead;
+    const footY = this.body.y + this.body.height; // body bottom = on the ground
+    return this.hazardAhead(footX, footY);
   }
 
   private maybeUpdateAttack(timeMs: number): void {
