@@ -30,6 +30,11 @@ type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead' | 'grabbed' | 'th
 
 const THROW_DURATION_MS = 800;
 const THROW_DAMAGE = 2;
+/** Minimum descent vy at the moment of grounding for the impact to be
+ *  fatal. Tuned so normal player attacks (knockbackY -50..-120 * 0.55
+ *  resist) can't accidentally trigger fall-kill, but throws (vy=-350
+ *  sideways, vy=-1000 up) and free-falls into pits do. */
+const FALL_KILL_VY = 700;
 
 /**
  * Basic patrol enemy. Walks back and forth across a fixed x-range until
@@ -55,6 +60,12 @@ export class Patrol {
   /** Per-throw set of patrol IDs already damaged by this projectile, so a
    *  thrown body can't multi-hit the same target while passing through. */
   private thrownAlreadyHit = new Set<number>();
+  /** Tracks the previous frame's vy. Used by the fall-kill check on the
+   *  grounded-transition: if you were falling fast and just landed, the
+   *  impact is lethal. */
+  private prevVy = 0;
+  /** Tracks last frame's grounded state for transition detection. */
+  private wasGrounded = true;
   private xMin: number;
   private xMax: number;
   private flashUntil = 0;
@@ -132,6 +143,26 @@ export class Patrol {
       this.sprite.fillColor = FILL_DEAD;
       return;
     }
+
+    // ─── Fall-kill detection ───────────────────────────────────────
+    // Body weight: a patrol that just landed with high vy dies on impact.
+    // Tracked via the grounded-transition edge (was airborne, now grounded)
+    // against the *previous* frame's vy (the velocity AT the moment of
+    // impact, before the collider zeroed it out this frame).
+    const grounded = this.body.blocked.down || this.body.touching.down;
+    if (
+      this.aiState !== 'grabbed' &&
+      grounded &&
+      !this.wasGrounded &&
+      this.prevVy > FALL_KILL_VY
+    ) {
+      this.fatalImpact(timeMs);
+      this.prevVy = 0;
+      this.wasGrounded = true;
+      return;
+    }
+    this.prevVy = this.body.velocity.y;
+    this.wasGrounded = grounded;
 
     // Grabbed: AI fully paused. GameScene drives sprite position each frame
     // via setGrabbedPosition().
@@ -369,6 +400,26 @@ export class Patrol {
   private endThrow(): void {
     this.aiState = 'patrol';
     this.thrownAlreadyHit.clear();
+  }
+
+  /**
+   * Lethal landing — credit the kill to the player so it counts toward
+   * their score. Called from update() on a high-vy grounded transition.
+   */
+  private fatalImpact(timeMs: number): void {
+    this.takeDamage(
+      {
+        damage: 99,
+        fromX: this.sprite.x,
+        fromY: this.sprite.y,
+        knockbackX: 0,
+        knockbackY: 0,
+        hitstopMs: 100,
+        attackName: 'fall-impact',
+        team: 'player',
+      },
+      timeMs,
+    );
   }
 
   destroy(): void {

@@ -364,11 +364,13 @@ export class GameScene extends Phaser.Scene {
       }
 
       // Tick spikes + damage check. Spike phase advances by dtMs; if the
-      // spike is currently dangerous AND overlaps the player, deal damage.
-      // Player's invuln frames make this safe against rapid re-hits.
+      // spike is currently dangerous AND overlaps the player or any
+      // patrol, fire the appropriate damage.
       for (const s of this.spikes) {
         const dangerous = s.update(dtMs);
-        if (dangerous && Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, s.hitRect())) {
+        if (!dangerous) continue;
+        const spikeRect = s.hitRect();
+        if (Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, spikeRect)) {
           this.player.takeDamage({
             damage: SPIKES.damage,
             fromX: s.worldX,
@@ -379,6 +381,29 @@ export class GameScene extends Phaser.Scene {
             attackName: 'spikes',
             team: 'enemy',
           }, timeMs);
+        }
+        // Spikes also kill enemies — anything that overlaps an open spike
+        // dies instantly. Includes thrown patrols arcing over the row,
+        // patrols knocked into spikes by a throw chain, or patrols whose
+        // patrol bounds happen to cross the row.
+        for (const p of this.patrols) {
+          if (!p.isAlive() || p.isGrabbed()) continue;
+          const pBody = p.body;
+          if (
+            pBody.x < spikeRect.right && pBody.x + pBody.width > spikeRect.left &&
+            pBody.y < spikeRect.bottom && pBody.y + pBody.height > spikeRect.top
+          ) {
+            p.takeDamage({
+              damage: 99,
+              fromX: s.worldX,
+              fromY: s.worldY,
+              knockbackX: 0,
+              knockbackY: -60,
+              hitstopMs: 80,
+              attackName: 'spikes',
+              team: 'player',
+            }, timeMs);
+          }
         }
       }
 
@@ -709,14 +734,20 @@ export class GameScene extends Phaser.Scene {
 
   private throwGrabbed(dir: 'left' | 'right' | 'up', timeMs: number): void {
     if (!this.grabbedEnemy) return;
+    // Throw velocities tuned for weight + arc readability:
+    //   - sideways: vx ±1100 sends them far across pits/platforms; vy
+    //     -350 gives a noticeable up-arc instead of a flat shove.
+    //   - up: vy -1000 so an up-throw clearly arcs HIGHER than sideways,
+    //     and on landing the descent vy crosses the patrol fall-kill
+    //     threshold (700) — up-throw becomes a viable kill move.
     let vx = 0;
     let vy = 0;
-    if (dir === 'left')       { vx = -700; vy = -200; }
-    else if (dir === 'right') { vx =  700; vy = -200; }
-    else                      { vx =    0; vy = -720; }
+    if (dir === 'left')       { vx = -1100; vy = -350; }
+    else if (dir === 'right') { vx =  1100; vy = -350; }
+    else                      { vx =     0; vy = -1000; }
     this.grabbedEnemy.throwMe(vx, vy, timeMs);
     this.audio.play(SFX.PLAYER_SHADOW_POUNCE); // heavier launch SFX for throw
-    this.fx.shake(80, 0.005);
+    this.fx.shake(110, 0.008);
     this.grabbedEnemy = null;
   }
 
