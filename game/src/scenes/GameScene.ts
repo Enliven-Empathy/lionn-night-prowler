@@ -202,18 +202,31 @@ export class GameScene extends Phaser.Scene {
       this.debugLastToggleAt = timeMs;
     }
 
+    // FX update ALWAYS runs — even after ended — so a hit-pause that froze
+    // physics.world.timeScale can release on schedule. If we left it in the
+    // !ended branch, a player who died WHILE in hit-pause would have physics
+    // permanently frozen at timeScale=50: the body wouldn't keep falling,
+    // the kill check (which compares sprite.y to deathY each frame on the
+    // PRE-update value) would never trip again, and the game-over overlay's
+    // scene-time delayedCall would also stall. Result: player appears stuck
+    // mid-air with no death screen until auto-restart fires 3.5s later.
+    this.fx.update(timeMs);
+
     if (!this.ended) {
       // ─── Death detection runs FIRST so nothing downstream can swallow it ───
-      // Hard safety floor: catches the player no matter what state they're in.
-      if (this.player.sprite.y > this.hardFloorY && !this.player.isDead()) {
+      // Use BOTH sprite.y and body.y — they should be in sync but if anything
+      // ever desyncs (origin offset, body offset), we want both checked.
+      const playerY = Math.max(this.player.sprite.y, this.player.body.y + this.player.body.height / 2);
+
+      if (playerY > this.hardFloorY && !this.player.isDead()) {
         // eslint-disable-next-line no-console
-        console.log(`[GameScene] hard-floor kill at y=${this.player.sprite.y.toFixed(0)}`);
+        console.log(`[GameScene] hard-floor kill at y=${playerY.toFixed(0)}`);
         this.player.kill();
       }
       // Pit kill: the normal "you fell off into nothing" trigger.
-      if (this.player.sprite.y > this.deathY && !this.player.isDead()) {
+      if (playerY > this.deathY && !this.player.isDead()) {
         // eslint-disable-next-line no-console
-        console.log(`[GameScene] pit kill at y=${this.player.sprite.y.toFixed(0)} (deathY=${this.deathY})`);
+        console.log(`[GameScene] pit kill at y=${playerY.toFixed(0)} (deathY=${this.deathY})`);
         this.player.kill();
       }
       if (this.player.isDead()) {
@@ -223,7 +236,6 @@ export class GameScene extends Phaser.Scene {
 
       // ─── Normal play ─────────────────────────────────────────────
       this.player.update(timeMs, dtSec, this.controls);
-      this.fx.update(timeMs);
 
       // Lazy-generate the next chunks ahead of the player, then materialize any
       // enemy / collectible / heart spawn requests those chunks emitted.
@@ -314,6 +326,11 @@ export class GameScene extends Phaser.Scene {
     // eslint-disable-next-line no-console
     console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; auto-restart in 3500ms`);
 
+    // Force-restore physics timeScale in case a hit pause was still active
+    // when we transitioned. Otherwise the death scene plays out in slow-mo
+    // and the game-over flash/overlay don't read clearly.
+    this.physics.world.timeScale = 1;
+
     // Schedule auto-restart via window.setTimeout. Fires from the browser's
     // main event loop, independent of Phaser's rAF / scene-time clocks. This
     // is what catches the "tab is backgrounded" / "game loop throttled" cases
@@ -349,14 +366,24 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(700, () => this.audio.play(SFX.UI_BEST_SCORE));
     }
     this.cameras.main.flash(180, 255, 60, 90, false);
-    this.time.delayedCall(420, () => {
-      this.endOverlay.show(kind, () => {
-        this.audio.play(SFX.UI_RESTART);
-        this.scene.restart();
-      });
-    });
+    // Use window.setTimeout — same reasoning as the auto-restart timer.
+    // scene.time.delayedCall depends on the scene clock, which throttles
+    // when the canvas loses focus. We want the overlay to appear on
+    // wall-clock time so the player ALWAYS sees a death screen.
+    window.setTimeout(() => {
+      if (this.ended && !this.autoRestartFired) {
+        this.endOverlay.show(kind, () => {
+          if (this.autoRestartTimerId !== null) {
+            window.clearTimeout(this.autoRestartTimerId);
+            this.autoRestartTimerId = null;
+          }
+          this.audio.play(SFX.UI_RESTART);
+          this.scene.restart();
+        });
+      }
+    }, 420);
     // Auto-restart is checked frame-by-frame in update(), not via a delayedCall.
-    // See the `else` branch in update() — uses timeMs - endedAt > 3500.
+    // See the `else` branch in update() — uses Date.now() - endedAtWall > 3500.
   }
 
   private formatBestDistance(): string {
