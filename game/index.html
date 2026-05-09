@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lionn: Night Prowler</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #07060c;
+        color: #c8c0e0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      #game {
+        box-shadow: 0 0 80px rgba(120, 40, 200, 0.25);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

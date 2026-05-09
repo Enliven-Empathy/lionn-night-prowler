@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+.vite/
+
+# Sprite extractor working files
+tools/sprite-extract/samples/*
+!tools/sprite-extract/samples/.gitkeep
+tools/sprite-extract/.cache/
+
+# Generated sprite output is not committed — regenerate from configs
+game/public/assets/sprites/**/*.png
+game/public/assets/sprites/**/*.json

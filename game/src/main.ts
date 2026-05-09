@@ -1,0 +1,32 @@
+import Phaser from 'phaser';
+import { VIEW } from './core/constants';
+import { BootScene } from './scenes/BootScene';
+import { PreloadScene } from './scenes/PreloadScene';
+import { GameScene } from './scenes/GameScene';
+
+const config: Phaser.Types.Core.GameConfig = {
+  type: Phaser.AUTO,
+  parent: 'game',
+  width: VIEW.width,
+  height: VIEW.height,
+  backgroundColor: '#0e0a18',
+  pixelArt: false,
+  roundPixels: true,
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { x: 0, y: 0 },
+      debug: false,
+    },
+  },
+  input: {
+    gamepad: true,
+  },
+  scene: [BootScene, PreloadScene, GameScene],
+};
+
+new Phaser.Game(config);

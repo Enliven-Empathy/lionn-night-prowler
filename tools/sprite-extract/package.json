@@ -1,0 +1,21 @@
+{
+  "name": "lionn-sprite-extract",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "extract": "tsx src/index.ts",
+    "typecheck": "tsc -noEmit"
+  },
+  "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
+    "minimist": "^1.2.8",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^20.12.7",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  }
+}
