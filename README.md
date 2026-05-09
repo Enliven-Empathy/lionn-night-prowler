@@ -45,7 +45,27 @@ Week 4 — Perception layer
   GATE: do testers say "I want to play more" without prompting?
 ```
 
-## Run the game
+## Play the game (no Claude needed)
+
+```bash
+cd /Users/alextavassoli/2026_Claude_Code_Enliven/lionn-night-prowler
+./play-lionn.sh
+```
+
+The script:
+1. Rebuilds the production bundle if `src/` is newer than `dist/`.
+2. Frees port 5180 if anything stale is using it.
+3. Serves `game/dist/` with `python3 -m http.server` (no Node needed
+   at runtime, no Vite, no Claude session).
+4. Opens `http://localhost:5180/` in your browser.
+
+Stop it with `Ctrl+C` in that terminal.
+
+The game is a static build — once `dist/` exists you can also serve it
+yourself with any static-file tool, or zip and share `dist/` with
+someone else.
+
+## Run the dev server (for source iteration)
 
 ```bash
 cd game
@@ -53,14 +73,28 @@ npm install
 npm run dev
 ```
 
-Opens on http://localhost:5173. Controls:
+Vite hot-reloads from source. This is what Claude uses while working
+on the game — not what the kid plays.
+
+Controls (both keyboard + PS5 / Xbox standard gamepad):
 
 | Action | Keyboard | Gamepad |
 |--------|----------|---------|
-| Move | Arrow / A,D | Left stick / D-pad |
-| Jump | Space / W | A (Xbox) / X (PS) |
-| Dash | Shift | RT / R2 |
-| Toggle debug | F3 | — |
+| Move | ← → / A,D | Left stick / D-pad |
+| Jump | Space / W | ✕ Cross |
+| Double jump | (press jump again mid-air) | (same) |
+| Dash | Shift | L1 / R1 / L2 / R2 |
+| Attack | J | □ Square / △ Triangle |
+| Crouch | ↓ / S | Down stick / D-pad |
+| Wall cling | hold direction into wall in air | (same) |
+| Wall jump | jump while clinging | (same) |
+| Restart on game-over | R / Space | Start / Share / Touchpad / ✕ Cross |
+| Toggle debug overlay | F3 | — |
+| Toggle hitbox debug | H | — |
+| Toggle gamepad debug panel | G | — |
+
+The game also auto-restarts ~3.5 s after death, so you never get stuck
+on a game-over screen.
 
 ## Run the sprite extractor
 

@@ -264,6 +264,18 @@ export class GameScene extends Phaser.Scene {
         this.scene.restart();
       });
     });
+
+    // Auto-restart so we never get stuck on a death screen waiting for the
+    // controller. Manual R / Cross / Start still works and triggers earlier.
+    // The `if (this.ended)` guard makes this a no-op if a manual restart
+    // already fired in the meantime (Phaser cancels delayedCalls on
+    // scene.restart anyway, but this is belt-and-suspenders).
+    this.time.delayedCall(3500, () => {
+      if (this.ended) {
+        this.audio.play(SFX.UI_RESTART);
+        this.scene.restart();
+      }
+    });
   }
 
   private formatBestDistance(): string {

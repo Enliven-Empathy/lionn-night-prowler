@@ -31,7 +31,7 @@ export class GameOverOverlay {
     });
     title.setOrigin(0.5).setScrollFactor(0).setDepth(2001);
 
-    const sub = this.scene.add.text(VIEW.width / 2, VIEW.height / 2 + 30, 'press R / SPACE / Start (Options) to retry', {
+    const sub = this.scene.add.text(VIEW.width / 2, VIEW.height / 2 + 30, 'auto-retry in a moment  ·  or press any button to retry now', {
       fontFamily: 'Cinzel, serif',
       fontSize: '20px',
       color: '#c4b8e8',
