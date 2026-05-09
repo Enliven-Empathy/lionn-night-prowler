@@ -1,0 +1,16 @@
+{
+  "name": "lionn-sfx-gen",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Generate game SFX + ambient music via the ElevenLabs sound-generation API and write embedded mp3 files into game/public/assets/audio.",
+  "scripts": {
+    "generate": "tsx src/generate.ts",
+    "generate:dry": "tsx src/generate.ts --dry-run",
+    "generate:only": "tsx src/generate.ts --only"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5"
+  }
+}

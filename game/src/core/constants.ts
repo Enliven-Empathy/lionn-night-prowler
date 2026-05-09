@@ -19,9 +19,9 @@ export const PLAYER = {
   coyoteMs: 100,
   jumpBufferMs: 120,
 
-  dashSpeed: 1500,
-  dashDurationMs: 140,
-  dashCooldownMs: 550,
+  dashSpeed: 1400,
+  dashDurationMs: 95,
+  dashCooldownMs: 520,
 
   // Double jump: one extra mid-air jump, recharges on ground/wall-jump.
   airJumps: 1,
