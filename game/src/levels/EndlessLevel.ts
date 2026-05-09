@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, PLAYER, SPIKES, VIEW, WALL_TOWER } from '../core/constants';
+import { COLORS, OVERHANG, PLAYER, SPIKES, VIEW, WALL_TOWER } from '../core/constants';
 
 const CHUNK_WIDTH = 640;
 const GROUND_TOP_Y = 640;
@@ -65,6 +65,13 @@ export interface SpikeSpawn {
   phaseOffsetMs: number;
 }
 
+export interface OverhangSpawn {
+  x: number;
+  /** Y of the overhang's bottom edge (the row that compares against player body top). */
+  bottomY: number;
+  width: number;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -81,6 +88,8 @@ export interface EndlessLevelHandle {
   drainHeartSpawns: () => HeartSpawn[];
   /** Returns and clears any spike-trap spawns buffered since the last call. */
   drainSpikeSpawns: () => SpikeSpawn[];
+  /** Returns and clears any overhang spawns buffered since the last call. */
+  drainOverhangSpawns: () => OverhangSpawn[];
 }
 
 export interface EndlessLevelOptions {
@@ -97,6 +106,7 @@ export class EndlessLevel {
   private pendingCollectibles: CollectibleSpawn[] = [];
   private pendingHearts: HeartSpawn[] = [];
   private pendingSpikes: SpikeSpawn[] = [];
+  private pendingOverhangs: OverhangSpawn[] = [];
   /** Set during generateChunk if the chunk's layout already pre-populated
    *  collectibles (e.g. wall-tower) and the generic scatter pass should skip. */
   private skipScatterForCurrentChunk = false;
@@ -143,6 +153,11 @@ export class EndlessLevel {
       drainSpikeSpawns: () => {
         const out = this.pendingSpikes;
         this.pendingSpikes = [];
+        return out;
+      },
+      drainOverhangSpawns: () => {
+        const out = this.pendingOverhangs;
+        this.pendingOverhangs = [];
         return out;
       },
     };
@@ -229,6 +244,34 @@ export class EndlessLevel {
     if (index >= 4) {
       this.maybeSpawnSpikes(segments);
     }
+
+    // Overhangs: low overhead obstacles. Past chunk 5, ~25% chance per
+    // chunk on wide ground. Standing players get hit; crouched players
+    // duck under.
+    if (index >= 5) {
+      this.maybeSpawnOverhang(segments);
+    }
+  }
+
+  /**
+   * 25% chance per eligible chunk to add an overhead spike bar at a
+   * height that requires crouching to pass under safely.
+   */
+  private maybeSpawnOverhang(segments: Segment[]): void {
+    if (this.rng() >= 0.25) return;
+    const grounds = segments
+      .filter((s) => s.kind === 'ground' && s.w >= 280)
+      .sort((a, b) => a.x - b.x);
+    if (grounds.length === 0) return;
+    const pick = grounds[Math.floor(this.rng() * grounds.length)];
+
+    const bottomY = pick.y - OVERHANG.bottomFromGround;
+    const maxW = Math.min(OVERHANG.defaultWidth, pick.w - 160);
+    if (maxW < 60) return;
+    const widthPx = Math.max(60, maxW);
+    const centerX = pick.x + pick.w / 2;
+
+    this.pendingOverhangs.push({ x: centerX, bottomY, width: widthPx });
   }
 
   private shouldSpawnWallTower(index: number): boolean {

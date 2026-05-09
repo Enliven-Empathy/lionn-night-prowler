@@ -6,8 +6,9 @@ import { Patrol } from '../entities/Patrol';
 import { Collectible } from '../entities/Collectible';
 import { Heart } from '../entities/Heart';
 import { Spikes } from '../entities/Spikes';
+import { Overhang } from '../entities/Overhang';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
-import { SPIKES } from '../core/constants';
+import { OVERHANG, SPIKES } from '../core/constants';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
 import { GameOverOverlay } from '../ui/GameOverOverlay';
@@ -27,6 +28,7 @@ export class GameScene extends Phaser.Scene {
   private collectibles: Collectible[] = [];
   private hearts: Heart[] = [];
   private spikes: Spikes[] = [];
+  private overhangs: Overhang[] = [];
   private staticGroupRef!: Phaser.Physics.Arcade.StaticGroup;
   private level!: EndlessLevelHandle;
   private debugOverlay!: DebugOverlay;
@@ -98,6 +100,7 @@ export class GameScene extends Phaser.Scene {
     this.collectibles = [];
     this.hearts = [];
     this.spikes = [];
+    this.overhangs = [];
     this.grabbedEnemy = null;
     this.grabbedAtMs = 0;
     this.grabPressedDirs = { left: false, right: false, up: false };
@@ -159,7 +162,7 @@ export class GameScene extends Phaser.Scene {
     const controlsHint = this.add.text(
       VIEW.width / 2,
       VIEW.height - 32,
-      'MOVE ←→ · JUMP Cross/SPACE (×2 double) · ATTACK □/J · DASH R1/SHIFT · GRAB ○/K then ←→↑ to throw',
+      'MOVE ←→ · JUMP Cross/SPACE (×2) · CROUCH ↓/S · ATTACK □/J · DASH R1/SHIFT · GRAB ○/K + ←→↑ to throw',
       {
         fontFamily: 'Cinzel, Georgia, serif',
         fontSize: '14px',
@@ -318,6 +321,7 @@ export class GameScene extends Phaser.Scene {
       this.drainCollectibleSpawns();
       this.drainHeartSpawns();
       this.drainSpikeSpawns();
+      this.drainOverhangSpawns();
 
       // Grab / throw orchestration runs BEFORE patrols update so the
       // grabbed patrol's frozen position is set this frame.
@@ -378,11 +382,32 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      // Cull patrols / collectibles / hearts / spikes that are far behind.
+      // Overhangs: low overhead obstacles. Standing player body extends
+      // up to (sprite.y - height/2). Crouched body is half-height so its
+      // top sits 28 px lower. AABB overlap test naturally separates the
+      // two — crouched players literally don't share Y range with the
+      // overhang's hitRect.
+      for (const o of this.overhangs) {
+        if (Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, o.hitRect())) {
+          this.player.takeDamage({
+            damage: OVERHANG.damage,
+            fromX: o.worldX,
+            fromY: o.bottomY,
+            knockbackX: OVERHANG.knockbackX,
+            knockbackY: OVERHANG.knockbackY,
+            hitstopMs: OVERHANG.hitstopMs,
+            attackName: 'overhang',
+            team: 'enemy',
+          }, timeMs);
+        }
+      }
+
+      // Cull patrols / collectibles / hearts / spikes / overhangs that are far behind.
       this.cullPatrols();
       this.cullCollectibles();
       this.cullHearts();
       this.cullSpikes();
+      this.cullOverhangs();
 
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
@@ -581,6 +606,12 @@ export class GameScene extends Phaser.Scene {
   private drainSpikeSpawns(): void {
     for (const s of this.level.drainSpikeSpawns()) {
       this.spikes.push(new Spikes(this, s.x, s.y, s.width, s.phaseOffsetMs));
+    }
+  }
+
+  private drainOverhangSpawns(): void {
+    for (const o of this.level.drainOverhangSpawns()) {
+      this.overhangs.push(new Overhang(this, o.x, o.bottomY, o.width));
     }
   }
 
@@ -807,6 +838,17 @@ export class GameScene extends Phaser.Scene {
       if (s.worldX < cullX) {
         s.destroy();
         this.spikes.splice(i, 1);
+      }
+    }
+  }
+
+  private cullOverhangs(): void {
+    const cullX = this.player.sprite.x - 1500;
+    for (let i = this.overhangs.length - 1; i >= 0; i--) {
+      const o = this.overhangs[i];
+      if (o.worldX < cullX) {
+        o.destroy();
+        this.overhangs.splice(i, 1);
       }
     }
   }

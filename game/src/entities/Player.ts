@@ -33,6 +33,9 @@ export class Player {
   private cancelLunge: (() => void) | null = null;
   private hurtRectCache = new Phaser.Geom.Rectangle();
   private prevSnap: MovementSnapshot | null = null;
+  /** Tracks the last frame's crouch state so we only resize the body on
+   *  transitions (resizing every frame is wasteful and visually jittery). */
+  private wasCrouching = false;
 
   /** Most recent hit-point world coords from a hitbox we landed. Used to spawn slash FX. */
   lastHitPoint: { x: number; y: number } | null = null;
@@ -118,6 +121,11 @@ export class Player {
 
     this.movement.update(timeMs, dtSec);
     const snap = this.movement.snapshot(timeMs);
+
+    // Crouch body-resize: shrinks the physics body so the player can fit
+    // under low overhangs. Body bottom edge stays pinned to where it was
+    // (feet on ground) — only the top edge drops. Visual squash matches.
+    this.applyCrouchResize(snap.crouching);
 
     // SFX from movement-state transitions: detect edges by comparing to last frame.
     this.emitMovementSfx(snap);
@@ -235,6 +243,37 @@ export class Player {
 
   setDebugHitboxes(visible: boolean): void {
     this.hitbox.setDebugVisible(visible);
+  }
+
+  /**
+   * Resize the physics body when crouch state changes. Body BOTTOM stays
+   * pinned (player's feet don't move on the ground) — only the body's
+   * top drops. Visual sprite is scaled vertically to match.
+   *
+   * The body's offset is set so that body.bottom = sprite.y + height/2
+   * regardless of crouch state, which keeps physics interactions natural
+   * (collisions still resolve at the feet, jumps still launch from the
+   * feet, etc).
+   */
+  private applyCrouchResize(crouching: boolean): void {
+    if (crouching === this.wasCrouching) return;
+    this.wasCrouching = crouching;
+
+    if (crouching) {
+      const h = PLAYER.crouchHeight;
+      // Offset positions the body within the sprite's bounds. Sprite top-
+      // left is at sprite.x - width/2, sprite.y - displayHeight/2. We want
+      // the body's TOP edge to sit at (originalHeight - crouchHeight) px
+      // below the sprite's top-left, so the body BOTTOM stays at the same
+      // place it was uncrouched.
+      this.body.setSize(PLAYER.width, h);
+      this.body.setOffset(0, PLAYER.height - h);
+      this.sprite.setScale(1, PLAYER.crouchScaleY);
+    } else {
+      this.body.setSize(PLAYER.width, PLAYER.height);
+      this.body.setOffset(0, 0);
+      this.sprite.setScale(1, 1);
+    }
   }
 
   /**

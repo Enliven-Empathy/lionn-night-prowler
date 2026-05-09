@@ -8,6 +8,15 @@ export const GRAVITY = 1700;
 export const PLAYER = {
   width: 38,
   height: 64,
+  /** Body height while crouched. Shorter so the player physically fits
+   *  under low overhangs (their head no longer occupies the standing-
+   *  height row). Body's bottom edge stays pinned at the same Y; only
+   *  the top edge drops. */
+  crouchHeight: 36,
+  /** Visual squash factor while crouched. Sprite center stays at the
+   *  same Y, so this also shifts the sprite a bit to keep the visual
+   *  feet roughly aligned with the physics feet. */
+  crouchScaleY: 0.55,
 
   runSpeed: 290,
   acceleration: 2100,
@@ -70,6 +79,24 @@ export const COMBAT = {
   hitPauseHeavyMs: 110,
   comboResetMs: 360,
   attackBufferMs: 110,
+} as const;
+
+export const OVERHANG = {
+  /** Y of the overhang's BOTTOM edge above the ground top. Tuned so that
+   *  a standing player (body top y = ground - 64 = ground - 64) hits it,
+   *  but a crouched player (body top y = ground - 36) clears it cleanly.
+   *  Setting it 4 px above standing body top means standing players
+   *  always bonk; crouched players have ~24 px head clearance. */
+  bottomFromGround: 60,
+  /** Total height of the overhang block (visual + damage zone). */
+  height: 24,
+  /** Default width in px. */
+  defaultWidth: 130,
+  /** Damage on contact when player is not crouched. */
+  damage: 2,
+  knockbackX: 0,
+  knockbackY: 220, // pushes the player DOWN — crouches them under the obstacle
+  hitstopMs: 70,
 } as const;
 
 export const SPIKES = {

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DamageSystem } from '../combat/DamageSystem';
 import { Combatant, DamageEvent } from '../combat/types';
 import { ATTACKS } from '../combat/attacks';
+import { GRAVITY } from '../core/constants';
 import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { HitFx } from '../fx/HitFx';
@@ -91,6 +92,11 @@ export class Patrol {
     this.body.setSize(SIZE.w, SIZE.h);
     this.body.setMaxVelocity(560, 1400);
     this.body.setCollideWorldBounds(false);
+    // Gravity must be enabled from spawn — without it, knockback's
+    // upward vy never gets pulled back down and the patrol floats up
+    // forever after the first hit. Same gravity value as the player so
+    // hits feel consistent.
+    this.body.setGravityY(GRAVITY);
 
     this.attack = new AttackState();
     this.hitbox = new Hitbox(scene, 'enemy');
