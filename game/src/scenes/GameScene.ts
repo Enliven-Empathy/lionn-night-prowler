@@ -177,7 +177,7 @@ export class GameScene extends Phaser.Scene {
     const controlsHint = this.add.text(
       VIEW.width / 2,
       VIEW.height - 32,
-      'MOVE ←→ · JUMP Cross/SPACE (×2) · CROUCH ↓/S · ATTACK □/J · DASH R1/SHIFT · ○/K grab → walk → ○/K + ←→↑ throw',
+      'MOVE ←→ · JUMP Cross/SPACE (×2) · CROUCH R2/L2/↓ · ATTACK □/J (×3 combo!) · DASH R1/SHIFT · ○/K grab → walk → ○/K + ←→↑ throw',
       {
         fontFamily: 'Cinzel, Georgia, serif',
         fontSize: '14px',

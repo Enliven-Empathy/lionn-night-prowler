@@ -468,7 +468,12 @@ export class PlayerMovement {
   }
 
   private updateCrouch(): void {
-    this.crouching = this.grounded && this.input.held('down');
+    // Crouch fires while grounded AND the dedicated crouch action is held
+    // (R2/L2 triggers, or DOWN/S as the keyboard fallback). Note: the
+    // ledge-grab handler also reads `held('down')` to mean "drop", which
+    // is fine — grounded vs ledge states are mutually exclusive, so the
+    // same physical key can mean different things in different contexts.
+    this.crouching = this.grounded && this.input.held('crouch');
   }
 
   private updateState(timeMs: number, dashing: boolean, hurt: boolean, clinging = false): void {

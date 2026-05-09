@@ -94,6 +94,14 @@ export class Player {
       if (e.kind === 'activeStart') {
         this.hitbox.activate(e.attack);
         this.attackFx.slash(this.sprite.x, this.sprite.y, facing, e.attack, 'player');
+        // 3-hit combo payoff: claw_3 (the heavy finisher) gets extra VFX
+        // and a beefier camera shake on top of the regular slash. The
+        // damage/knockback boost lives in attacks.ts; this is just the
+        // visual+haptic coat of paint.
+        if (e.attack.name === 'claw_3') {
+          this.attackFx.finisher(this.sprite.x, this.sprite.y, facing, e.attack, 'player');
+          this.fx.shake(180, 0.018);
+        }
       } else if (e.kind === 'activeEnd') {
         this.hitbox.deactivate();
       } else if (e.kind === 'recoveryEnd') {
@@ -247,33 +255,50 @@ export class Player {
   }
 
   /**
-   * Resize the physics body when crouch state changes. Body BOTTOM stays
-   * pinned (player's feet don't move on the ground) — only the body's
-   * top drops. Visual sprite is scaled vertically to match.
+   * Resize the physics body AND the visual sprite when crouch state
+   * changes. Both anchor to the floor: body.bottom and visual-rect bottom
+   * share the same world Y across the transition.
    *
-   * The body's offset is set so that body.bottom = sprite.y + height/2
-   * regardless of crouch state, which keeps physics interactions natural
-   * (collisions still resolve at the feet, jumps still launch from the
-   * feet, etc).
+   * The earlier version anchored only the body (via offset), and used
+   * sprite.setScale(1, 0.55) — but Phaser's scale keeps the sprite
+   * CENTERED on sprite.y. So the visual shrunk while its center stayed
+   * put, leaving the visual feet floating ~14 px above the actual body
+   * bottom. That looked broken on screen and was the symptom behind
+   * "crouch doesn't function".
+   *
+   * Fix: snapshot floorY = body.bottom BEFORE resize, then:
+   *   1. Apply scale (changes displayHeight only).
+   *   2. Move sprite.y so visual bottom lands on floorY.
+   *   3. Resize the body and pick body.offset.y so the sync formula
+   *      (body.y = sprite.y - originY*sprite.height + offset.y) yields
+   *      body.y = floorY - newHeight, i.e. body.bottom = floorY.
+   *
+   * sprite.height is the *unscaled* dimension and stays at PLAYER.height
+   * across the transition — only displayHeight changes via scale. That
+   * makes the offset math simple: 32 - h/2 for crouch, 0 for standing.
+   *
+   * Sprite.y can be safely written here because crouch only fires while
+   * grounded (body at rest); next physics tick re-syncs body from the
+   * new sprite.y + offset and confirms body.bottom == floorY.
    */
   private applyCrouchResize(crouching: boolean): void {
     if (crouching === this.wasCrouching) return;
     this.wasCrouching = crouching;
 
+    const floorY = this.body.y + this.body.height;
+
     if (crouching) {
       const h = PLAYER.crouchHeight;
-      // Offset positions the body within the sprite's bounds. Sprite top-
-      // left is at sprite.x - width/2, sprite.y - displayHeight/2. We want
-      // the body's TOP edge to sit at (originalHeight - crouchHeight) px
-      // below the sprite's top-left, so the body BOTTOM stays at the same
-      // place it was uncrouched.
+      const scaleY = h / PLAYER.height;
+      this.sprite.setScale(1, scaleY);
+      this.sprite.y = floorY - h / 2;
       this.body.setSize(PLAYER.width, h);
-      this.body.setOffset(0, PLAYER.height - h);
-      this.sprite.setScale(1, PLAYER.crouchScaleY);
+      this.body.setOffset(0, PLAYER.height / 2 - h / 2);
     } else {
+      this.sprite.setScale(1, 1);
+      this.sprite.y = floorY - PLAYER.height / 2;
       this.body.setSize(PLAYER.width, PLAYER.height);
       this.body.setOffset(0, 0);
-      this.sprite.setScale(1, 1);
     }
   }
 

@@ -33,16 +33,26 @@ export const ATTACKS: Record<string, AttackData> = {
     next: 'claw_3',
     fxTag: 'slash-light',
   },
+  // Combo finisher. Lands ONLY as the third hit of claw_1 → claw_2 →
+  // claw_3 (the chain logic in Player.tryStartAttack drives this). Stats
+  // are tuned to feel like a payoff for landing two hits in a row:
+  //   - damage 4: enough to one-shot most patrols (HP 3) outright.
+  //   - knockback ±400 / -280 launches enemies far enough to chain into
+  //     pits or spike rows for a multi-kill.
+  //   - hitstop 200 ms gives the impact a full beat to read on screen.
+  //   - hitbox enlarged so the finisher catches anyone in front.
+  // The Player's update loop watches for activeStart with name=claw_3 and
+  // adds finisher VFX (ring shockwave + double slash) + a heavier shake.
   claw_3: {
     name: 'claw_3',
-    startupMs: 110,
-    activeMs: 110,
-    recoveryMs: 320,
-    damage: 2,
-    knockbackX: 240,
-    knockbackY: -120,
-    hitstopMs: 130,
-    hitbox: { offsetX: 36, offsetY: -8, w: 70, h: 64 },
+    startupMs: 130,
+    activeMs: 140,
+    recoveryMs: 340,
+    damage: 4,
+    knockbackX: 400,
+    knockbackY: -280,
+    hitstopMs: 200,
+    hitbox: { offsetX: 38, offsetY: -8, w: 100, h: 80 },
     fxTag: 'slash-heavy',
   },
   air_claw: {

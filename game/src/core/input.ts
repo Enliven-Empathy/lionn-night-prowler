@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'attack' | 'grab' | 'debugToggle' | 'restart';
+export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'crouch' | 'attack' | 'grab' | 'debugToggle' | 'restart';
 
 interface ActionState {
   held: boolean;
@@ -59,7 +59,7 @@ export class InputController {
     this.keys.debug1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F3);
     this.keys.restart1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'attack', 'grab', 'debugToggle', 'restart'];
+    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'crouch', 'attack', 'grab', 'debugToggle', 'restart'];
     for (const name of allActions) {
       this.actions.set(name, { held: false, pressedAt: -Infinity, releasedAt: -Infinity });
     }
@@ -90,15 +90,24 @@ export class InputController {
     // misfires on idle BT pads.)
     const jumpHeld = this.k('jump1') || btn(pad, BTN.CROSS_A);
 
-    // Dash: Shoulders + triggers. Triggers are analog; threshold them.
-    const r2 = analog(pad, BTN.R2);
-    const l2 = analog(pad, BTN.L2);
+    // Dash: shoulders only (R1/L1) + Shift on keyboard. Triggers (R2/L2) are
+    // now reserved for crouch — see below.
     const dashHeld =
       this.k('dash1') ||
       btn(pad, BTN.R1) ||
-      btn(pad, BTN.L1) ||
+      btn(pad, BTN.L1);
+
+    // Crouch: R2/L2 triggers OR keyboard down (DOWN/S) OR D-pad down. Keeping
+    // the down-axis as a fallback means kids on keyboard-only still have a
+    // discoverable crouch even though the gamepad now uses triggers. The
+    // analog triggers are thresholded so a slight resting pressure doesn't
+    // spam-toggle the body resize.
+    const r2 = analog(pad, BTN.R2);
+    const l2 = analog(pad, BTN.L2);
+    const crouchHeld =
       r2 > TRIGGER_THRESHOLD ||
-      l2 > TRIGGER_THRESHOLD;
+      l2 > TRIGGER_THRESHOLD ||
+      downHeld;
 
     // Attack: Square (primary). Triangle as alt. Circle DELIBERATELY excluded —
     // some BT-paired DualSense controllers report Circle pressed at idle.
@@ -131,6 +140,7 @@ export class InputController {
     this.set('down', downHeld);
     this.set('jump', jumpHeld);
     this.set('dash', dashHeld);
+    this.set('crouch', crouchHeld);
     this.set('attack', attackHeld);
     this.set('grab', grabHeld);
     this.set('debugToggle', debugHeld);

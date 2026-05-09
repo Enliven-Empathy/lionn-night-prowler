@@ -111,6 +111,79 @@ export class AttackFx {
   }
 
   /**
+   * Combo-finisher overlay — fires on top of the regular slash when the
+   * third hit of claw_1 → claw_2 → claw_3 connects. Stack of effects:
+   *
+   *   1. Outward ring shockwave (centered on the impact point) that
+   *      expands and fades — reads as a heavy concussive blow.
+   *   2. Twin counter-rotated slash bars on top of the standard slash for
+   *      a "two-hits-in-one" silhouette.
+   *   3. Brief screen-fill flash sliver (low alpha) for "snap" of impact.
+   *
+   * Stateless, ephemeral — same lifecycle pattern as slash().
+   */
+  finisher(originX: number, originY: number, facing: 1 | -1, attack: AttackData, team: AttackTeam): void {
+    const c = COLORS[team];
+    const hb = attack.hitbox;
+    const cx = originX + hb.offsetX * facing;
+    const cy = originY + hb.offsetY;
+
+    // Shockwave ring — empty fill, thick stroke, expands outward.
+    const ring = this.scene.add.circle(cx, cy, 18, 0, 0);
+    ring.setStrokeStyle(5, c.glow, 0.9);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    ring.setDepth(905);
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 4.0,
+      scaleY: 4.0,
+      alpha: 0,
+      duration: 360,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    // Twin slashes — counter-rotated for a chiasm/X look.
+    for (const angle of [-Math.PI / 4, Math.PI / 4]) {
+      const blade = this.scene.add.rectangle(cx, cy, hb.w * 1.2, hb.h * 0.35, c.core, 0.95);
+      blade.setRotation(angle * (facing === 1 ? 1 : -1));
+      blade.setBlendMode(Phaser.BlendModes.ADD);
+      blade.setDepth(906);
+      this.scene.tweens.add({
+        targets: blade,
+        scaleX: 1.7,
+        scaleY: 0.25,
+        alpha: 0,
+        duration: 220,
+        ease: 'Quad.easeOut',
+        onComplete: () => blade.destroy(),
+      });
+    }
+
+    // Brief screen flash — full-canvas tint, low alpha, scrolls with
+    // camera so it reads as full-screen even while the camera moves.
+    const cam = this.scene.cameras.main;
+    const flash = this.scene.add.rectangle(
+      cam.scrollX + cam.width / 2,
+      cam.scrollY + cam.height / 2,
+      cam.width + 200,
+      cam.height + 200,
+      c.slash,
+      0.18,
+    );
+    flash.setBlendMode(Phaser.BlendModes.ADD);
+    flash.setDepth(902);
+    flash.setScrollFactor(0);
+    this.scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 140,
+      ease: 'Quad.easeOut',
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  /**
    * Squash-then-stretch the attacker's body to read as a swing.
    * Returns a cleanup function to call when the attack ends, in case the
    * tween outlives the attack (interrupted by hurt, etc).
