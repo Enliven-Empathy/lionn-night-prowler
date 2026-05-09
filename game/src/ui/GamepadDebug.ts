@@ -8,12 +8,13 @@ import { VIEW } from '../core/constants';
  *  - all button states with their index, lit when pressed
  *  - which game actions they currently resolve to
  *
- * Toggle with G. Always-on at first launch so we can verify mapping right after pairing.
+ * Toggle with G. Hidden by default; only shown when the user wants to
+ * verify mapping after pairing a new controller.
  */
 export class GamepadDebug {
   private scene: Phaser.Scene;
   private text: Phaser.GameObjects.Text;
-  visible = true;
+  visible = false;
   private buttonNames = [
     'A (✕ Cross)',     // 0
     'B (○ Circle)',    // 1

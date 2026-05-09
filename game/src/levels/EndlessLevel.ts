@@ -198,7 +198,7 @@ export class EndlessLevel {
     // No enemies, no platforms, no spikes — keep it focused on the climb.
     if (isWallTower) {
       const towerCenterX = x0 + CHUNK_WIDTH / 2;
-      const wallTopY = GROUND_TOP_Y - WALL_TOWER.wallH;
+      const wallTopY = GROUND_TOP_Y - WALL_TOWER.bottomGapPx - WALL_TOWER.wallH;
       this.pendingCollectibles.push({
         x: towerCenterX,
         y: wallTopY - WALL_TOWER.rewardYOffset,
@@ -237,9 +237,20 @@ export class EndlessLevel {
   }
 
   /**
-   * Whole-chunk layout: continuous ground beneath, two tall parallel walls
-   * close enough together to wall-jump between, +8 crystal at the top.
-   * Generates no other obstacles in this chunk so the climb stays focused.
+   * Whole-chunk layout: continuous ground beneath, two parallel walls
+   * HANGING ABOVE the ground (with a bottom gap) so the player can walk
+   * underneath and jump up into the chute to start the wall-jump climb.
+   * +8 crystal at the top. No other obstacles — keep the climb focused.
+   *
+   * Geometry (Y increases downward):
+   *   ground top      = GROUND_TOP_Y
+   *   wall bottom     = GROUND_TOP_Y - bottomGapPx                (above ground)
+   *   wall top        = GROUND_TOP_Y - bottomGapPx - wallH        (highest)
+   *   crystal         = wall top - rewardYOffset                  (just above)
+   *
+   * The bottom gap (110 px) is generous enough that the player (body
+   * height 64) can walk under without bonking, and they can jump up
+   * (95 px single-jump reach) to enter the chute and start clinging.
    */
   private layoutWallTowerChunk(x0: number): Segment[] {
     const segs: Segment[] = [];
@@ -254,7 +265,8 @@ export class EndlessLevel {
     });
 
     const towerCenterX = x0 + CHUNK_WIDTH / 2;
-    const wallTopY = GROUND_TOP_Y - WALL_TOWER.wallH;
+    const wallBottomY = GROUND_TOP_Y - WALL_TOWER.bottomGapPx;
+    const wallTopY = wallBottomY - WALL_TOWER.wallH;
     const innerHalfGap = WALL_TOWER.wallGapPx / 2;
 
     // Left wall: inner face at towerCenterX - innerHalfGap

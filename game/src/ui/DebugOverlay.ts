@@ -3,7 +3,9 @@ import { MovementSnapshot } from '../movement/PlayerMovement';
 
 export class DebugOverlay {
   private text: Phaser.GameObjects.Text;
-  private visible = true;
+  // Hidden by default — this is dev/diag chrome, not for everyday play.
+  // Toggle with F3.
+  private visible = false;
 
   constructor(scene: Phaser.Scene) {
     this.text = scene.add.text(12, 12, '', {
@@ -13,7 +15,7 @@ export class DebugOverlay {
       backgroundColor: 'rgba(8, 6, 16, 0.65)',
       padding: { left: 8, right: 8, top: 6, bottom: 6 },
     });
-    this.text.setScrollFactor(0).setDepth(1000);
+    this.text.setScrollFactor(0).setDepth(1000).setVisible(false);
   }
 
   toggle(): void {

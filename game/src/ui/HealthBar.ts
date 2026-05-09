@@ -52,10 +52,13 @@ export class HealthBar {
     this.flash = scene.add.rectangle(2, 0, FILL_W, FILL_H, 0xffffff, 0);
     this.flash.setOrigin(0, 0.5).setBlendMode(Phaser.BlendModes.ADD);
 
-    this.label = scene.add.text(BAR_W + 10, 0, 'HP', {
+    // ♥ icon glyph rendered as part of the label — clearer than the bare
+    // "HP" string. Cinzel doesn't have a heart glyph but Phaser falls
+    // through the font stack to a system font that does.
+    this.label = scene.add.text(BAR_W + 10, 0, '♥  10 / 10', {
       fontFamily: 'Cinzel, Georgia, serif',
-      fontSize: '14px',
-      color: '#c4b8e8',
+      fontSize: '15px',
+      color: '#ffb8cc',
       stroke: '#0b0816',
       strokeThickness: 3,
     });
@@ -82,7 +85,7 @@ export class HealthBar {
       ease: 'Quad.easeOut',
     });
     this.fill.setFillStyle(targetColor);
-    this.label.setText(`HP  ${current} / ${max}`);
+    this.label.setText(`♥  ${current} / ${max}`);
 
     if (took) this.flashHit();
 

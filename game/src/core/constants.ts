@@ -80,10 +80,15 @@ export const SPIKES = {
 
 export const WALL_TOWER = {
   wallW: 22,
-  wallH: 320,
+  wallH: 240,
   /** Distance between the two walls' inner faces. Tuned to be narrow enough
    *  that wall-jump arc reaches the opposite wall reliably. */
   wallGapPx: 78,
+  /** Distance from wall BOTTOM to ground top. Without this gap, the walls
+   *  would form an impassable barrier at ground level — there'd be no way
+   *  to get *into* the chute. Player walks under the walls at ground level,
+   *  then jumps UP into the chute and starts the wall-jump climb. */
+  bottomGapPx: 110,
   /** Tier-3 reward Y offset above wall top. */
   rewardYOffset: 36,
 } as const;

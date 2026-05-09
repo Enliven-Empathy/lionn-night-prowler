@@ -141,11 +141,37 @@ export class GameScene extends Phaser.Scene {
     this.hpBar = new HealthBar(this, 24, 96);
     this.hpBar.set(this.player.hp, this.player.maxHp);
 
-    this.add.text(120, 24, 'Lionn: Night Prowler — endless courtyard  ·  Cross/Space jump x2  ·  Square/J attack  ·  R1/Shift dash  ·  G gamepad-debug', {
-      fontFamily: 'Menlo, monospace',
-      fontSize: '12px',
-      color: '#7a6da0',
-    }).setScrollFactor(0);
+    // Controls hint — appears on spawn, fades out after 6s. Doesn't pollute
+    // the screen the rest of the run. Re-shown each scene.restart so the
+    // kid can re-read the bindings if they forget.
+    const controlsHint = this.add.text(
+      VIEW.width / 2,
+      VIEW.height - 32,
+      'MOVE  ←→ / A·D     JUMP  Cross / SPACE  (×2 for double-jump)     ATTACK  □ Square / J     DASH  R1 / SHIFT',
+      {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '14px',
+        color: '#c4b8e8',
+        stroke: '#0b0816',
+        strokeThickness: 3,
+        align: 'center',
+      },
+    );
+    controlsHint.setOrigin(0.5, 1).setScrollFactor(0).setDepth(1100).setAlpha(0);
+    this.tweens.add({ targets: controlsHint, alpha: 1, duration: 350, delay: 200 });
+    this.tweens.add({ targets: controlsHint, alpha: 0, duration: 700, delay: 5800 });
+
+    // Tiny corner hint so users can find the dev toggles if they want them.
+    this.add.text(
+      VIEW.width - 8,
+      VIEW.height - 6,
+      'F3 debug · G gamepad · H hitboxes',
+      {
+        fontFamily: 'Menlo, monospace',
+        fontSize: '10px',
+        color: '#5a4a78',
+      },
+    ).setOrigin(1, 1).setScrollFactor(0).setDepth(1100).setAlpha(0.55);
 
     this.distanceText = this.add.text(VIEW.width / 2, 18, '0 m', {
       fontFamily: 'Cinzel, Georgia, serif',
