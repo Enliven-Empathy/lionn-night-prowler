@@ -72,6 +72,17 @@ export interface OverhangSpawn {
   width: number;
 }
 
+/** Result of a ledge query: a static rect whose top edge is grabbable from
+ *  the player's current side-touch position. Coords are world-space. */
+export interface LedgeInfo {
+  /** Y of the rect's top edge. The player's body.top snaps here when grabbing. */
+  topY: number;
+  /** X of the rect's left edge. */
+  leftX: number;
+  /** Rect width. */
+  width: number;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -90,6 +101,23 @@ export interface EndlessLevelHandle {
   drainSpikeSpawns: () => SpikeSpawn[];
   /** Returns and clears any overhang spawns buffered since the last call. */
   drainOverhangSpawns: () => OverhangSpawn[];
+  /**
+   * Find a static rectangle the player can ledge-grab onto, given the
+   * player's body bounds and the wall side they're currently touching.
+   *   - `side === 1`  → wall on player's right; we look for a rect whose
+   *     LEFT edge matches the player's RIGHT edge.
+   *   - `side === -1` → wall on player's left; we look for a rect whose
+   *     RIGHT edge matches the player's LEFT edge.
+   * The rect's TOP must be near the player's HEAD (small ± window) for
+   * the catch to feel natural — too high and the player isn't tall
+   * enough to reach; too low and they've already cleared the ledge.
+   */
+  findLedge: (
+    bodyLeft: number,
+    bodyRight: number,
+    bodyTop: number,
+    side: -1 | 1,
+  ) => LedgeInfo | null;
 }
 
 export interface EndlessLevelOptions {
@@ -160,7 +188,48 @@ export class EndlessLevel {
         this.pendingOverhangs = [];
         return out;
       },
+      findLedge: (left, right, top, side) => this.findLedge(left, right, top, side),
     };
+  }
+
+  /**
+   * Iterate the active static rectangles and return the first one whose
+   * top edge is grabbable from `side` at the player's current body bounds.
+   *
+   * Tolerances:
+   *   - X edge match within 8 px (snap-to-grab feels generous; physics
+   *     contact already had to hold for the call to fire).
+   *   - Y window: rect.top in [body.top - 16, body.top + 20]. Lets the
+   *     player both rise into a ledge from below AND fall past one
+   *     they're sliding on.
+   *
+   * Wall-tower walls (22 px wide) are intentionally NOT excluded — the
+   * climb path centers narrow rects so the player ends up straddling the
+   * top, which is exactly the affordance we want for tower tops.
+   */
+  private findLedge(
+    bodyLeft: number,
+    bodyRight: number,
+    bodyTop: number,
+    side: -1 | 1,
+  ): LedgeInfo | null {
+    const X_EPS = 8;
+    const Y_LO = bodyTop - 16;
+    const Y_HI = bodyTop + 20;
+
+    const children = this.staticGroup.getChildren();
+    for (const child of children) {
+      const b = (child as Phaser.GameObjects.GameObject & { body?: Phaser.Physics.Arcade.StaticBody }).body;
+      if (!b) continue;
+      if (b.y < Y_LO || b.y > Y_HI) continue;
+      if (side === 1) {
+        if (Math.abs(b.x - bodyRight) > X_EPS) continue;
+      } else {
+        if (Math.abs((b.x + b.width) - bodyLeft) > X_EPS) continue;
+      }
+      return { topY: b.y, leftX: b.x, width: b.width };
+    }
+    return null;
   }
 
   private ensureGenerated(playerX: number): void {

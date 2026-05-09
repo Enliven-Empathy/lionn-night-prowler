@@ -64,14 +64,21 @@ export class GameScene extends Phaser.Scene {
   private restartWasHeld = false;
   private restartArmedAt = 0;
 
-  // Grab/throw state
+  // Grab/throw state.
+  //
+  // Input flow (refactored 2026-05-09):
+  //   - Press Circle (○) / K with no enemy held → grab the closest patrol.
+  //   - While carrying, arrow keys / stick = WALK with the enemy overhead.
+  //     Movement is fully unaffected by direction presses.
+  //   - Press Circle (○) / K AGAIN → throw the carried enemy in the direction
+  //     currently held (left, right, or up). If no direction is held,
+  //     defaults to a sideways throw in the player's facing direction.
+  //
+  // The previous design fired a throw on any fresh direction press while
+  // carrying, which made walking-with-an-enemy impossible — every step
+  // launched the captive.
   private grabbedEnemy: Patrol | null = null;
   private grabbedAtMs = 0;
-  /** Snapshot of which directions were already held at the moment of grab.
-   *  Used so a continuously-held direction (e.g. you pressed Circle while
-   *  walking right) doesn't immediately count as a throw — the player has
-   *  to release and re-press to throw in that direction. */
-  private grabPressedDirs = { left: false, right: false, up: false };
 
   private distanceText!: Phaser.GameObjects.Text;
   private bestDistance = 0;
@@ -103,7 +110,6 @@ export class GameScene extends Phaser.Scene {
     this.overhangs = [];
     this.grabbedEnemy = null;
     this.grabbedAtMs = 0;
-    this.grabPressedDirs = { left: false, right: false, up: false };
     this.score = 0;
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
@@ -137,7 +143,16 @@ export class GameScene extends Phaser.Scene {
     this.level = new EndlessLevel(this).build();
     this.staticGroupRef = this.level.staticGroup;
 
-    this.player = new Player(this, this.level.spawnX, this.level.spawnY, this.controls, this.damage, this.fx, this.audio);
+    this.player = new Player(
+      this,
+      this.level.spawnX,
+      this.level.spawnY,
+      this.controls,
+      this.damage,
+      this.fx,
+      this.audio,
+      this.level.findLedge,
+    );
     this.physics.add.collider(this.player.sprite, this.level.staticGroup);
 
     // Drain initial enemy spawns now that the static group + collider system is ready.
@@ -162,7 +177,7 @@ export class GameScene extends Phaser.Scene {
     const controlsHint = this.add.text(
       VIEW.width / 2,
       VIEW.height - 32,
-      'MOVE ←→ · JUMP Cross/SPACE (×2) · CROUCH ↓/S · ATTACK □/J · DASH R1/SHIFT · GRAB ○/K + ←→↑ to throw',
+      'MOVE ←→ · JUMP Cross/SPACE (×2) · CROUCH ↓/S · ATTACK □/J · DASH R1/SHIFT · ○/K grab → walk → ○/K + ←→↑ throw',
       {
         fontFamily: 'Cinzel, Georgia, serif',
         fontSize: '14px',
@@ -648,48 +663,49 @@ export class GameScene extends Phaser.Scene {
    * input on the currently grabbed enemy.
    */
   private handleGrabInput(timeMs: number): void {
-    // Auto-release if grabbed enemy died from a hit (e.g. player attacks while
-    // an enemy is grabbed — currently shouldn't happen since attacks while
-    // grabbing are unusual, but keep the safety).
+    // Auto-release if the carried enemy died (e.g. spike-killed a patrol
+    // we happened to be carrying mid-air — defensive cleanup).
     if (this.grabbedEnemy && !this.grabbedEnemy.isAlive()) {
       this.grabbedEnemy = null;
     }
 
-    // Try to grab.
-    if (!this.grabbedEnemy && this.controls.justPressed('grab', 16)) {
-      this.controls.consumePress('grab');
-      this.tryGrab(timeMs);
+    const grabPressed = this.controls.justPressed('grab', 16);
+
+    // No enemy carried → a fresh grab press tries to grab one. We
+    // consumePress so the SAME press can't immediately fall through to
+    // the throw branch this frame.
+    if (!this.grabbedEnemy) {
+      if (grabPressed) {
+        this.controls.consumePress('grab');
+        this.tryGrab(timeMs);
+      }
       return;
     }
 
-    if (!this.grabbedEnemy) return;
-
-    // Auto-break after 3 s.
+    // Auto-break after 3 s — the enemy struggles free.
     if (timeMs - this.grabbedAtMs > 3000) {
       this.grabbedEnemy.releaseGrab();
       this.grabbedEnemy = null;
       return;
     }
 
-    // Throw on FRESH press of a direction. A direction that was held at
-    // the moment of grab doesn't count as a throw until released-then-
-    // pressed again, so walking-right + grab doesn't insta-throw right.
-    const leftNow = this.controls.held('left');
-    const rightNow = this.controls.held('right');
-    const upNow = this.controls.held('up');
-
-    let throwDir: 'left' | 'right' | 'up' | null = null;
-    if (leftNow && !this.grabPressedDirs.left) throwDir = 'left';
-    else if (rightNow && !this.grabPressedDirs.right) throwDir = 'right';
-    else if (upNow && !this.grabPressedDirs.up) throwDir = 'up';
-
-    // Refresh "was held" so a release re-arms that direction.
-    if (!leftNow) this.grabPressedDirs.left = false;
-    if (!rightNow) this.grabPressedDirs.right = false;
-    if (!upNow) this.grabPressedDirs.up = false;
-
-    if (throwDir) {
-      this.throwGrabbed(throwDir, timeMs);
+    // Carrying an enemy: a SECOND fresh Circle press throws. Direction
+    // priority: up > left > right > facing-default. This frees the
+    // arrow keys / stick for walking — the captive only launches when
+    // the player explicitly presses the throw button again.
+    if (grabPressed) {
+      this.controls.consumePress('grab');
+      let dir: 'left' | 'right' | 'up';
+      if (this.controls.held('up')) {
+        dir = 'up';
+      } else if (this.controls.held('left')) {
+        dir = 'left';
+      } else if (this.controls.held('right')) {
+        dir = 'right';
+      } else {
+        dir = this.player.movement.getFacing() === 1 ? 'right' : 'left';
+      }
+      this.throwGrabbed(dir, timeMs);
     }
   }
 
@@ -716,11 +732,6 @@ export class GameScene extends Phaser.Scene {
     best.setGrabbed();
     this.grabbedEnemy = best;
     this.grabbedAtMs = timeMs;
-    this.grabPressedDirs = {
-      left: this.controls.held('left'),
-      right: this.controls.held('right'),
-      up: this.controls.held('up'),
-    };
     this.audio.play(SFX.PLAYER_CLAW_2); // close-enough proxy SFX for grab
   }
 

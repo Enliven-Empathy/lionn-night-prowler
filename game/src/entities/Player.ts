@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PLAYER, COLORS } from '../core/constants';
 import { InputController } from '../core/input';
-import { MovementSnapshot, PlayerMovement } from '../movement/PlayerMovement';
+import { LedgeQuery, MovementSnapshot, PlayerMovement } from '../movement/PlayerMovement';
 import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { DamageSystem } from '../combat/DamageSystem';
@@ -48,6 +48,7 @@ export class Player {
     damage: DamageSystem,
     fx: HitFx,
     audio: AudioManager,
+    findLedge?: LedgeQuery,
   ) {
     this.sprite = scene.add.rectangle(x, y, PLAYER.width, PLAYER.height, COLORS.player);
     scene.physics.add.existing(this.sprite);
@@ -56,7 +57,7 @@ export class Player {
     this.body.setDragX(0);
     this.body.setSize(PLAYER.width, PLAYER.height);
 
-    this.movement = new PlayerMovement(this.body, input);
+    this.movement = new PlayerMovement(this.body, input, findLedge);
     this.attack = new AttackState();
     this.hitbox = new Hitbox(scene, 'player');
     this.damage = damage;

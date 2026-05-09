@@ -11,8 +11,20 @@ export type MovementState =
   | 'dash'
   | 'wallCling'
   | 'wallJump'
+  | 'ledgeGrab'
   | 'land'
   | 'hurt';
+
+/** World query the movement system uses to detect ledge-grabbable static
+ *  rectangles. Returns world-space coords of the rect's top edge and X
+ *  bounds, or null if no ledge is in range. Implemented by the level so
+ *  the movement code stays world-agnostic. */
+export type LedgeQuery = (
+  bodyLeft: number,
+  bodyRight: number,
+  bodyTop: number,
+  side: -1 | 1,
+) => { topY: number; leftX: number; width: number } | null;
 
 export interface MovementSnapshot {
   state: MovementState;
@@ -61,9 +73,16 @@ export class PlayerMovement {
   private crouching = false;
   private movementLocked = false;
 
-  constructor(body: Phaser.Physics.Arcade.Body, input: InputController) {
+  private findLedge?: LedgeQuery;
+  /** When non-null, the player is hanging on a ledge — physics is frozen,
+   *  position is pinned to the ledge edge, and only jump/down/away inputs
+   *  are interpreted. */
+  private ledgeGrab: { topY: number; leftX: number; width: number; side: -1 | 1 } | null = null;
+
+  constructor(body: Phaser.Physics.Arcade.Body, input: InputController, findLedge?: LedgeQuery) {
     this.body = body;
     this.input = input;
+    this.findLedge = findLedge;
     this.body.setMaxVelocity(10000, PLAYER.maxFallSpeed);
     this.body.setGravityY(GRAVITY);
   }
@@ -111,6 +130,22 @@ export class PlayerMovement {
     const hurt = timeMs < this.hurtUntil;
     const knockedBack = timeMs < this.knockbackUntil;
 
+    // ─── Ledge grab takes precedence over everything else ────────────
+    // If the player is hanging on a ledge, physics is frozen and we only
+    // listen for: JUMP (climb up), DOWN (drop off), or AWAY-press
+    // (release to the side). Hurt also breaks the grab.
+    if (this.ledgeGrab && !hurt) {
+      this.handleLedgeGrab(timeMs);
+      this.updateFacing();
+      // Don't propagate cling state — ledge is a distinct state, and we
+      // don't want shouldWallCling's first-engage logic to fire on exit.
+      this.wasClingLastFrame = false;
+      return;
+    }
+    if (this.ledgeGrab && hurt) {
+      this.releaseLedge();
+    }
+
     if (this.movementLocked || hurt) {
       this.body.setGravityY(GRAVITY);
       this.applyVariableJumpCutoff();
@@ -125,6 +160,31 @@ export class PlayerMovement {
     if (!dashing && this.canDash(timeMs) && this.input.justPressed('dash', 16)) {
       this.startDash(timeMs);
       this.input.consumePress('dash');
+    }
+
+    // ─── Try to engage ledge grab ────────────────────────────────────
+    // Conditions: airborne, side-touching a wall, and a static rect's
+    // top edge sits within the player's grab window. Engages from a
+    // jump-up-into-ledge OR a fall-past-ledge — both feel natural.
+    if (
+      !this.grounded &&
+      this.wallSide !== 0 &&
+      !dashing &&
+      !knockedBack &&
+      this.findLedge
+    ) {
+      const info = this.findLedge(
+        this.body.x,
+        this.body.x + this.body.width,
+        this.body.y,
+        this.wallSide as -1 | 1,
+      );
+      if (info) {
+        this.enterLedgeGrab(info, this.wallSide as -1 | 1);
+        this.updateFacing();
+        this.wasClingLastFrame = false;
+        return;
+      }
     }
 
     const clinging = this.shouldWallCling(timeMs);
@@ -148,6 +208,99 @@ export class PlayerMovement {
     this.updateState(timeMs, dashing, hurt, clinging);
     this.updateFacing();
     this.wasClingLastFrame = clinging;
+  }
+
+  // ─── Ledge grab ────────────────────────────────────────────────────
+
+  private enterLedgeGrab(info: { topY: number; leftX: number; width: number }, side: -1 | 1): void {
+    this.ledgeGrab = { topY: info.topY, leftX: info.leftX, width: info.width, side };
+    // Snap body so its TOP aligns with the ledge top — player visually
+    // hangs by their hands, body below the ledge.
+    this.body.setVelocity(0, 0);
+    this.body.setGravityY(0);
+    this.body.y = info.topY;
+    // Pin X to the ledge edge so we don't penetrate the wall.
+    if (side === 1) {
+      this.body.x = info.leftX - this.body.width;
+    } else {
+      this.body.x = info.leftX + info.width;
+    }
+    // Refill air jump on grab (treat ledge like ground for jump count).
+    this.airJumpsRemaining = PLAYER.airJumps;
+    this.jumpHeldThisJump = false;
+    this.crouching = false; // standing pose while hanging
+  }
+
+  private releaseLedge(): void {
+    this.ledgeGrab = null;
+    this.body.setGravityY(GRAVITY);
+  }
+
+  /** Handle inputs while hanging. Returns having decided this tick. */
+  private handleLedgeGrab(_timeMs: number): void {
+    const lg = this.ledgeGrab!;
+
+    // Re-pin position every frame so any sub-pixel physics drift can't
+    // walk the body off the ledge.
+    this.body.setVelocity(0, 0);
+    this.body.setGravityY(0);
+    this.body.y = lg.topY;
+    if (lg.side === 1) {
+      this.body.x = lg.leftX - this.body.width;
+    } else {
+      this.body.x = lg.leftX + lg.width;
+    }
+
+    // JUMP → climb up onto the platform.
+    if (this.input.justPressed('jump', 16)) {
+      this.input.consumePress('jump');
+      this.climbLedge();
+      return;
+    }
+
+    // DOWN → drop off cleanly.
+    if (this.input.held('down')) {
+      this.releaseLedge();
+      this.body.setVelocityY(60); // small downward kick so we leave the edge
+      return;
+    }
+
+    // AWAY → release and push off in the away direction.
+    const axisX = this.input.axisX();
+    const pushAway =
+      (lg.side === 1 && axisX < -0.2) || (lg.side === -1 && axisX > 0.2);
+    if (pushAway) {
+      this.releaseLedge();
+      this.body.setVelocityX(-lg.side * 220);
+      this.body.setVelocityY(-180);
+      return;
+    }
+
+    this.state = 'ledgeGrab';
+  }
+
+  private climbLedge(): void {
+    const lg = this.ledgeGrab!;
+    const inset = 6;
+    let targetX: number;
+    if (lg.width < this.body.width) {
+      // Narrow rect (e.g. wall-tower wall): center the player on it
+      // — they'll straddle the top with mild overhang on both sides.
+      targetX = lg.leftX + (lg.width - this.body.width) / 2;
+    } else if (lg.side === 1) {
+      targetX = lg.leftX + inset;
+    } else {
+      targetX = lg.leftX + lg.width - this.body.width - inset;
+    }
+    this.body.x = targetX;
+    this.body.y = lg.topY - this.body.height - 1;
+    this.body.setVelocityX(0);
+    this.body.setVelocityY(-160); // small bump up so we don't immediately collide back into the platform
+    this.body.setGravityY(GRAVITY);
+    this.airJumpsRemaining = PLAYER.airJumps;
+    this.jumpHeldThisJump = true;
+    this.state = 'jumpRise';
+    this.ledgeGrab = null;
   }
 
   snapshot(timeMs: number): MovementSnapshot {
