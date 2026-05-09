@@ -28,6 +28,14 @@ const KNOCKBACK_RESIST = 0.55;
 
 type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead' | 'grabbed' | 'thrown';
 
+/** 'patrol' — full AI: walks bounds, detects player, chases, attacks.
+ *  'dummy'  — stationary slam-target: walks back and forth in narrow
+ *  bounds, doesn't aggro the player, doesn't attack. Used in parkour
+ *  rooms where the kid focuses on traversal — the patrol exists only
+ *  to be ground-pounded. Still takes damage, still has a hazard probe
+ *  (won't walk off platform), still grabbable/throwable. */
+export type PatrolVariant = 'patrol' | 'dummy';
+
 /** Look-ahead probe used by the patrol AI to refuse stepping into a pit
  *  or onto an active spike row. The footX/footY point is where the
  *  patrol's foot WOULD be on the next step; the probe should answer
@@ -91,6 +99,7 @@ export class Patrol {
    *  step onto a hazard. Stops the AI from facing-flipping every frame
    *  in front of a danger zone (which looked twitchy on screen). */
   private hazardWaitUntilMs = 0;
+  private variant: PatrolVariant = 'patrol';
 
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
@@ -107,6 +116,7 @@ export class Patrol {
     fx: HitFx,
     audio: AudioManager,
     hazardAhead?: PatrolHazardProbe,
+    variant: PatrolVariant = 'patrol',
   ) {
     this.sprite = scene.add.rectangle(x, y, SIZE.w, SIZE.h, FILL_PATROL);
     this.sprite.setStrokeStyle(2, STROKE, 0.85);
@@ -127,6 +137,7 @@ export class Patrol {
     this.xMin = xMin;
     this.xMax = xMax;
     this.hazardAhead = hazardAhead;
+    this.variant = variant;
     this.damage = damage;
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
@@ -210,12 +221,18 @@ export class Patrol {
       isChasing ? FILL_CHASE :
       FILL_PATROL;
 
+    // Dummies don't aggro the player. They're slam targets that exist
+    // only to be ground-pounded — keeps parkour rooms focused on
+    // traversal rather than combat. Hazard probe still runs (so they
+    // don't walk off platforms) and they still take damage normally.
     const seesPlayer =
+      this.variant === 'patrol' &&
       target.alive &&
       Math.abs(target.x - this.sprite.x) < DETECT_X &&
       Math.abs(target.y - this.sprite.y) < DETECT_Y;
 
     const inAttackRange =
+      this.variant === 'patrol' &&
       target.alive &&
       Math.abs(target.x - this.sprite.x) < ATTACK_X &&
       Math.abs(target.y - this.sprite.y) < ATTACK_Y;

@@ -7,6 +7,7 @@ import { Collectible } from '../entities/Collectible';
 import { Heart } from '../entities/Heart';
 import { Spikes } from '../entities/Spikes';
 import { Overhang } from '../entities/Overhang';
+import { SlidePole } from '../entities/SlidePole';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
 import { ParkourLevel } from '../levels/ParkourLevel';
 
@@ -28,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   private controls!: InputController;
   private player!: Player;
   private patrols: Patrol[] = [];
+  private slidePoles: SlidePole[] = [];
   private collectibles: Collectible[] = [];
   private hearts: Heart[] = [];
   private spikes: Spikes[] = [];
@@ -120,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.debugLastToggleAt = -Infinity;
     this.debugHitboxes = false;
     this.patrols = [];
+    this.slidePoles = [];
     this.collectibles = [];
     this.hearts = [];
     this.spikes = [];
@@ -170,6 +173,30 @@ export class GameScene extends Phaser.Scene {
       : new EndlessLevel(this).build();
     this.staticGroupRef = this.level.staticGroup;
 
+    // findSlidePole closes over `this.slidePoles` — that array is
+    // populated by drainSlidePoleSpawns() AFTER Player is built. The
+    // closure resolves lazily at query time, so it's safe.
+    const findSlidePole = (
+      bodyLeft: number,
+      bodyRight: number,
+      bodyCenterY: number,
+      side: -1 | 1,
+    ) => {
+      const X_EPS = 6;
+      for (const sp of this.slidePoles) {
+        if (bodyCenterY < sp.topY || bodyCenterY > sp.topY + sp.heightPx) continue;
+        if (side === 1) {
+          // pole is on the right of the player → pole.left ≈ player.right
+          if (Math.abs(sp.worldX - bodyRight) > X_EPS) continue;
+        } else {
+          // pole is on the left → pole.right ≈ player.left
+          if (Math.abs((sp.worldX + sp.widthPx) - bodyLeft) > X_EPS) continue;
+        }
+        return { topY: sp.topY, bottomY: sp.topY + sp.heightPx };
+      }
+      return null;
+    };
+
     this.player = new Player(
       this,
       this.level.spawnX,
@@ -179,11 +206,13 @@ export class GameScene extends Phaser.Scene {
       this.fx,
       this.audio,
       this.level.findLedge,
+      findSlidePole,
     );
     this.physics.add.collider(this.player.sprite, this.level.staticGroup);
 
-    // Drain initial enemy spawns now that the static group + collider system is ready.
+    // Drain initial spawns now that the static group + collider system is ready.
     this.drainEnemySpawns();
+    this.drainSlidePoleSpawns();
 
     // Kick off ambient music (auto-resumes after first user input if browser
     // had the audio context locked).
@@ -387,6 +416,7 @@ export class GameScene extends Phaser.Scene {
       this.drainHeartSpawns();
       this.drainSpikeSpawns();
       this.drainOverhangSpawns();
+      this.drainSlidePoleSpawns();
 
       // Grab / throw orchestration runs BEFORE patrols update so the
       // grabbed patrol's frozen position is set this frame.
@@ -674,7 +704,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drainEnemySpawns(): void {
-    for (const s of this.level.drainEnemySpawns()) {
+    const spawns = this.level.drainEnemySpawns();
+    // ParkourLevel surfaces a parallel-array variants channel via a
+    // non-standard handle field. Endless mode doesn't, so default all
+    // patrols to the full-AI variant when missing.
+    const drainVariants = (this.level as unknown as { drainEnemyVariants?: () => ('patrol' | 'dummy')[] }).drainEnemyVariants;
+    const variants = drainVariants ? drainVariants() : [];
+    for (let i = 0; i < spawns.length; i++) {
+      const s = spawns[i];
+      const variant = variants[i] ?? 'patrol';
       const p = new Patrol(
         this,
         s.x,
@@ -685,9 +723,19 @@ export class GameScene extends Phaser.Scene {
         this.fx,
         this.audio,
         (footX, footY) => this.patrolStepHazardous(footX, footY),
+        variant,
       );
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
+    }
+  }
+
+  private drainSlidePoleSpawns(): void {
+    const drain = this.level.drainSlidePoleSpawns;
+    if (!drain) return;
+    for (const sp of drain()) {
+      const pole = new SlidePole(this, sp.x, sp.topY, sp.height, this.staticGroupRef);
+      this.slidePoles.push(pole);
     }
   }
 

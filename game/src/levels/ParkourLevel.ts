@@ -7,50 +7,36 @@ import {
   HeartSpawn,
   LedgeInfo,
   OverhangSpawn,
+  SlidePoleSpawn,
   SpikeSpawn,
 } from './EndlessLevel';
+import { PARKOUR_ROOMS } from './parkour/rooms';
+import { ParkourRoom } from './parkour/types';
 
 /**
- * Parkour mode — a separate, isolated game mode. The Endless mode keeps
- * its existing chunked horizontal level intact; ParkourLevel exposes the
- * SAME `EndlessLevelHandle` interface so GameScene can swap one for the
- * other with no other change to the scene.
+ * Parkour mode — authored-room sequencer.
  *
- * Design intent (the kid must feel masterful, in full control):
- *   - Continuous ground at the bottom of every chunk → falls always
- *     return the player to a recoverable surface, never to a death pit.
- *   - Vertical-tower chunks stack 3-4 platforms with reachable spacing
- *     (≤ 120 px between layers, well inside PLAYER.jumpReachPx = 130).
- *   - Poles are 22 px wide so the existing narrow-rect wall-cling +
- *     centered-climb logic in PlayerMovement.climbLedge already lands
- *     the player straddling the top.
- *   - No enemies, spikes, hearts, or overhangs in parkour mode (pure
- *     traversal). All `drain*` helpers return empty arrays to satisfy
- *     the handle interface.
+ * Each chunk in the parkour world is a hand-designed ParkourRoom
+ * (see src/levels/parkour/rooms). The sequencer walks the room list
+ * in order so the difficulty ramp is predictable, then loops back to
+ * the start. RNG is used only for spike phase variation across runs;
+ * geometry is fully deterministic so the kid can master each room.
  *
- * If parkour-specific hazards or rewards are added later, they go here
- * — the Endless level stays untouched.
+ * The level still implements EndlessLevelHandle so GameScene's
+ * level-construction branch is the only place that knows about
+ * parkour vs endless — every other system is mode-agnostic.
+ *
+ * Hazards/enemies/collectibles/slide-poles authored in each room are
+ * surfaced via the existing drain* channels (and a new
+ * drainSlidePoleSpawns).
  */
 
 const CHUNK_WIDTH = 640;
 const GROUND_TOP_Y = 640;
-const GROUND_HEIGHT = 80;
 const SPAWN_AHEAD_CHUNKS = 4;
 
-const PLATFORM_THICK = 18;
-const POLE_WIDTH = 22;
-const PLATFORM_FILL = COLORS.platform;
-const PLATFORM_EDGE = COLORS.platformEdge;
 const POLE_FILL = 0x3a2a55;
 const POLE_EDGE = 0x9b59ff;
-
-interface Segment {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  kind: 'ground' | 'platform' | 'pole';
-}
 
 interface Chunk {
   index: number;
@@ -67,7 +53,17 @@ export class ParkourLevel {
   private chunks = new Map<number, Chunk>();
   private rng: () => number;
   private maxGenerated = -1;
+
   private pendingCollectibles: CollectibleSpawn[] = [];
+  private pendingEnemies: EnemySpawn[] = [];
+  private pendingSpikes: SpikeSpawn[] = [];
+  private pendingOverhangs: OverhangSpawn[] = [];
+  private pendingSlidePoles: SlidePoleSpawn[] = [];
+
+  /** Patrol variants requested by authored rooms (parallel array to
+   *  pendingEnemies — same index = same enemy). GameScene reads this
+   *  via drainEnemyVariants() to pick patrol AI vs dummy slam-target. */
+  private pendingEnemyVariants: ('patrol' | 'dummy')[] = [];
 
   readonly spawnX = 120;
   readonly spawnY = 540;
@@ -77,8 +73,8 @@ export class ParkourLevel {
     this.staticGroup = scene.physics.add.staticGroup();
     this.rng = mulberry32(options.seed ?? (Math.random() * 1e9) | 0);
 
-    // Background — a slightly different tint than endless so the kid can
-    // tell the modes apart at a glance, even before reading the HUD label.
+    // Slightly darker backdrop so the mode reads as distinct even before
+    // the kid notices the HUD label.
     scene.add.rectangle(VIEW.width / 2, VIEW.height / 2, VIEW.width, VIEW.height, 0x0a0816)
       .setDepth(-100)
       .setScrollFactor(0);
@@ -86,22 +82,44 @@ export class ParkourLevel {
     for (let i = 0; i <= SPAWN_AHEAD_CHUNKS; i++) this.generateChunk(i);
   }
 
-  build(): EndlessLevelHandle {
+  build(): EndlessLevelHandle & { drainEnemyVariants: () => ('patrol' | 'dummy')[] } {
     return {
       staticGroup: this.staticGroup,
       spawnX: this.spawnX,
       spawnY: this.spawnY,
       ensureGenerated: (playerX: number) => this.ensureGenerated(playerX),
       distance: (playerX: number) => Math.max(0, playerX - this.spawnX),
-      drainEnemySpawns: () => [] as EnemySpawn[],
+      drainEnemySpawns: () => {
+        const out = this.pendingEnemies;
+        this.pendingEnemies = [];
+        return out;
+      },
+      drainEnemyVariants: () => {
+        const out = this.pendingEnemyVariants;
+        this.pendingEnemyVariants = [];
+        return out;
+      },
       drainCollectibleSpawns: () => {
         const out = this.pendingCollectibles;
         this.pendingCollectibles = [];
         return out;
       },
       drainHeartSpawns: () => [] as HeartSpawn[],
-      drainSpikeSpawns: () => [] as SpikeSpawn[],
-      drainOverhangSpawns: () => [] as OverhangSpawn[],
+      drainSpikeSpawns: () => {
+        const out = this.pendingSpikes;
+        this.pendingSpikes = [];
+        return out;
+      },
+      drainOverhangSpawns: () => {
+        const out = this.pendingOverhangs;
+        this.pendingOverhangs = [];
+        return out;
+      },
+      drainSlidePoleSpawns: () => {
+        const out = this.pendingSlidePoles;
+        this.pendingSlidePoles = [];
+        return out;
+      },
       findLedge: (left, right, top, side) => this.findLedge(left, right, top, side),
     };
   }
@@ -114,202 +132,96 @@ export class ParkourLevel {
     }
   }
 
+  private pickRoom(index: number): ParkourRoom {
+    return PARKOUR_ROOMS[index % PARKOUR_ROOMS.length];
+  }
+
   private generateChunk(index: number): void {
     const x0 = index * CHUNK_WIDTH;
+    const room = this.pickRoom(index);
     const rects: Phaser.GameObjects.Rectangle[] = [];
 
-    let segments: Segment[];
-    if (index === 0) {
-      // Spawn chunk: simple intro stairs so the kid can practice without a
-      // gap-jump on frame one.
-      segments = this.layoutIntro(x0);
-    } else {
-      // Pick from a small pool of patterns. Each pattern guarantees a
-      // playable path from the chunk's left edge to a top reward.
-      const roll = this.rng();
-      if (roll < 0.4) segments = this.layoutStairs(x0, index);
-      else if (roll < 0.75) segments = this.layoutPoleGauntlet(x0, index);
-      else segments = this.layoutMixed(x0, index);
-    }
-
-    for (const seg of segments) {
-      const fill = seg.kind === 'pole' ? POLE_FILL : seg.kind === 'platform' ? PLATFORM_FILL : COLORS.ground;
-      const edge = seg.kind === 'pole' ? POLE_EDGE : seg.kind === 'platform' ? PLATFORM_EDGE : COLORS.groundEdge;
-      const r = this.scene.add.rectangle(seg.x + seg.w / 2, seg.y + seg.h / 2, seg.w, seg.h, fill);
+    // 1. Static geometry (segments). Translate room-local coords by x0.
+    for (const seg of room.segments) {
+      const fill =
+        seg.kind === 'pole' ? POLE_FILL :
+        seg.kind === 'platform' ? COLORS.platform :
+        seg.kind === 'wall' ? COLORS.platform :
+        COLORS.ground;
+      const edge =
+        seg.kind === 'pole' ? POLE_EDGE :
+        seg.kind === 'platform' ? COLORS.platformEdge :
+        seg.kind === 'wall' ? COLORS.platformEdge :
+        COLORS.groundEdge;
+      const r = this.scene.add.rectangle(
+        x0 + seg.x + seg.w / 2,
+        seg.y + seg.h / 2,
+        seg.w,
+        seg.h,
+        fill,
+      );
       r.setStrokeStyle(2, edge);
       this.scene.physics.add.existing(r, true);
       this.staticGroup.add(r);
       rects.push(r);
     }
 
+    // 2. Overhangs (visual + AABB-only damage rect; no static body).
+    for (const o of room.overhangs ?? []) {
+      this.pendingOverhangs.push({
+        x: x0 + o.x,
+        bottomY: o.bottomY,
+        width: o.width,
+      });
+    }
+
+    // 3. Spike rows.
+    for (const s of room.spikes ?? []) {
+      this.pendingSpikes.push({
+        x: x0 + s.x,
+        y: s.y,
+        width: s.width,
+        phaseOffsetMs: s.phaseOffsetMs,
+      });
+    }
+
+    // 4. Enemies + their variant.
+    for (const e of room.enemies ?? []) {
+      this.pendingEnemies.push({
+        x: x0 + e.x,
+        y: e.y,
+        xMin: x0 + e.xMin,
+        xMax: x0 + e.xMax,
+      });
+      this.pendingEnemyVariants.push(e.variant ?? 'patrol');
+    }
+
+    // 5. Collectibles.
+    for (const c of room.collectibles) {
+      this.pendingCollectibles.push({
+        x: x0 + c.x,
+        y: c.y,
+        tier: c.tier,
+      });
+    }
+
+    // 6. Slide poles.
+    for (const sp of room.slidePoles ?? []) {
+      this.pendingSlidePoles.push({
+        x: x0 + sp.x,
+        topY: sp.topY,
+        height: sp.height,
+      });
+    }
+
+    void this.rng; // reserved for future per-chunk randomization (e.g. spike phase shifts)
+
     this.chunks.set(index, { index, rects });
     if (index > this.maxGenerated) this.maxGenerated = index;
   }
 
-  /**
-   * The first chunk — fully predictable so the kid orients themselves on
-   * spawn. Continuous ground + 3 stair platforms going up to a tier-2
-   * reward. No surprises.
-   */
-  private layoutIntro(x0: number): Segment[] {
-    const segs: Segment[] = [];
-    segs.push(ground(x0, CHUNK_WIDTH));
-
-    // Stair platforms.
-    const baseY = GROUND_TOP_Y - 110;
-    for (let i = 0; i < 3; i++) {
-      segs.push({
-        x: x0 + 180 + i * 130,
-        y: baseY - i * 110,
-        w: 100,
-        h: PLATFORM_THICK,
-        kind: 'platform',
-      });
-    }
-
-    // Reward above the top stair.
-    const top = segs[segs.length - 1];
-    this.pendingCollectibles.push({
-      x: top.x + top.w / 2,
-      y: top.y - 36,
-      tier: 2,
-    });
-
-    return segs;
-  }
-
-  /**
-   * Stairs going up: 3-4 platforms at increasing heights. Each step is a
-   * single-jump reach so chains feel rhythmic. Reward at the top.
-   */
-  private layoutStairs(x0: number, index: number): Segment[] {
-    const segs: Segment[] = [];
-    segs.push(ground(x0, CHUNK_WIDTH));
-
-    const stepCount = 3 + (index % 2); // 3 or 4 steps
-    const baseY = GROUND_TOP_Y - 110;
-    const stepDx = 130;
-    const stepDy = 110; // < jumpReachPx (130) so always reachable
-    const startX = x0 + 100 + Math.floor(this.rng() * 80);
-
-    for (let i = 0; i < stepCount; i++) {
-      segs.push({
-        x: startX + i * stepDx,
-        y: baseY - i * stepDy,
-        w: 100,
-        h: PLATFORM_THICK,
-        kind: 'platform',
-      });
-    }
-
-    const top = segs[segs.length - 1];
-    this.pendingCollectibles.push({
-      x: top.x + top.w / 2,
-      y: top.y - 36,
-      tier: 3,
-    });
-
-    return segs;
-  }
-
-  /**
-   * Pole gauntlet: 3 vertical poles at varying heights. Player wall-jumps
-   * UP each pole, top-stands, then jumps to the next. Existing wall-cling
-   * + climbLedge narrow-rect centering handles the "straddle the top"
-   * affordance without any new mechanics.
-   */
-  private layoutPoleGauntlet(x0: number, index: number): Segment[] {
-    const segs: Segment[] = [];
-    segs.push(ground(x0, CHUNK_WIDTH));
-
-    // 3 poles, evenly spaced. Heights alternate so the climb-jump path
-    // requires going up-and-over each time, not flat hops.
-    const poleCount = 3;
-    const poleStartX = x0 + 130;
-    const poleSpacing = 150;
-    const baseTopY = GROUND_TOP_Y - 220;
-    for (let i = 0; i < poleCount; i++) {
-      const wobble = (index + i) % 2 === 0 ? 0 : -60;
-      const topY = baseTopY + wobble;
-      const height = GROUND_TOP_Y - topY - 30; // 30 px gap above ground so kid can walk under
-      segs.push({
-        x: poleStartX + i * poleSpacing,
-        y: topY,
-        w: POLE_WIDTH,
-        h: height,
-        kind: 'pole',
-      });
-    }
-
-    // Reward above the rightmost pole.
-    const last = segs[segs.length - 1];
-    this.pendingCollectibles.push({
-      x: last.x + last.w / 2,
-      y: last.y - 36,
-      tier: 3,
-    });
-
-    return segs;
-  }
-
-  /**
-   * Mixed: a stair, a pole, then a stair to the reward. Exercises the
-   * full kit in one chunk.
-   */
-  private layoutMixed(x0: number, index: number): Segment[] {
-    const segs: Segment[] = [];
-    segs.push(ground(x0, CHUNK_WIDTH));
-
-    const baseY = GROUND_TOP_Y - 110;
-    // Lower stair.
-    const s1 = {
-      x: x0 + 100,
-      y: baseY,
-      w: 110,
-      h: PLATFORM_THICK,
-      kind: 'platform' as const,
-    };
-    segs.push(s1);
-
-    // Pole between, reaching above stair 1 by ~120 so wall-jumping the
-    // pole tops out near the second stair.
-    const poleX = s1.x + s1.w + 80;
-    const poleTop = baseY - 130;
-    const poleH = GROUND_TOP_Y - poleTop - 30;
-    segs.push({
-      x: poleX,
-      y: poleTop,
-      w: POLE_WIDTH,
-      h: poleH,
-      kind: 'pole',
-    });
-
-    // Top stair, slightly higher than the pole top so the kid has to
-    // top-step + jump.
-    const s2 = {
-      x: poleX + POLE_WIDTH + 90,
-      y: poleTop - 60,
-      w: 110,
-      h: PLATFORM_THICK,
-      kind: 'platform' as const,
-    };
-    segs.push(s2);
-
-    this.pendingCollectibles.push({
-      x: s2.x + s2.w / 2,
-      y: s2.y - 36,
-      tier: 3,
-    });
-
-    void index;
-    return segs;
-  }
-
-  /**
-   * Same logic as EndlessLevel.findLedge — iterate static rects, return
-   * one whose side edge matches the player's current side touch and
-   * whose top is in the grab window. Implementation stays world-local.
-   */
+  /** Same as EndlessLevel.findLedge — iterate the static group, return
+   *  one whose side edge matches and top is in the grab window. */
   private findLedge(
     bodyLeft: number,
     bodyRight: number,
@@ -334,19 +246,11 @@ export class ParkourLevel {
     }
     return null;
   }
+
+  // expose constants for any caller that needs them
+  static readonly GROUND_TOP_Y = GROUND_TOP_Y;
 }
 
-function ground(x: number, w: number): Segment {
-  return {
-    x,
-    y: GROUND_TOP_Y,
-    w,
-    h: GROUND_HEIGHT,
-    kind: 'ground',
-  };
-}
-
-// PRNG mirrored from EndlessLevel so seed reproduces a parkour layout.
 function mulberry32(seed: number): () => number {
   let t = seed | 0;
   return () => {

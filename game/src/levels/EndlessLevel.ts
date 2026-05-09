@@ -72,6 +72,20 @@ export interface OverhangSpawn {
   width: number;
 }
 
+/** Slide-pole spawn — vertical bar the player descends along at a constant
+ *  slow speed when in side-contact while airborne. Different from a regular
+ *  wall because contact is automatic (no axis-toward required) and there's
+ *  no sticky window: pure controlled descent until the player presses jump
+ *  (push off horizontally), down/crouch (release to fall), or away. */
+export interface SlidePoleSpawn {
+  /** X of the pole's LEFT edge. */
+  x: number;
+  /** Y of the pole's TOP edge. */
+  topY: number;
+  /** Pole height in pixels. */
+  height: number;
+}
+
 /** Result of a ledge query: a static rect whose top edge is grabbable from
  *  the player's current side-touch position. Coords are world-space. */
 export interface LedgeInfo {
@@ -101,6 +115,9 @@ export interface EndlessLevelHandle {
   drainSpikeSpawns: () => SpikeSpawn[];
   /** Returns and clears any overhang spawns buffered since the last call. */
   drainOverhangSpawns: () => OverhangSpawn[];
+  /** Returns and clears any slide-pole spawns buffered since the last call.
+   *  Optional — endless mode ships none, so EndlessLevel can omit it. */
+  drainSlidePoleSpawns?: () => SlidePoleSpawn[];
   /**
    * Find a static rectangle the player can ledge-grab onto, given the
    * player's body bounds and the wall side they're currently touching.

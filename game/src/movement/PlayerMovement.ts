@@ -26,6 +26,17 @@ export type LedgeQuery = (
   side: -1 | 1,
 ) => { topY: number; leftX: number; width: number } | null;
 
+/** World query: returns slide-pole bounds if the player is currently in
+ *  side-contact with one. Used to override wall-cling behavior with the
+ *  slide-pole's controlled descent. Implemented by GameScene (it walks
+ *  the slidePoles list it built from drainSlidePoleSpawns). */
+export type SlidePoleQuery = (
+  bodyLeft: number,
+  bodyRight: number,
+  bodyCenterY: number,
+  side: -1 | 1,
+) => { topY: number; bottomY: number } | null;
+
 export interface MovementSnapshot {
   state: MovementState;
   facing: 1 | -1;
@@ -80,15 +91,22 @@ export class PlayerMovement {
   private movementLocked = false;
 
   private findLedge?: LedgeQuery;
+  private findSlidePole?: SlidePoleQuery;
   /** When non-null, the player is hanging on a ledge — physics is frozen,
    *  position is pinned to the ledge edge, and only jump/down/away inputs
    *  are interpreted. */
   private ledgeGrab: { topY: number; leftX: number; width: number; side: -1 | 1 } | null = null;
 
-  constructor(body: Phaser.Physics.Arcade.Body, input: InputController, findLedge?: LedgeQuery) {
+  constructor(
+    body: Phaser.Physics.Arcade.Body,
+    input: InputController,
+    findLedge?: LedgeQuery,
+    findSlidePole?: SlidePoleQuery,
+  ) {
     this.body = body;
     this.input = input;
     this.findLedge = findLedge;
+    this.findSlidePole = findSlidePole;
     this.body.setMaxVelocity(10000, PLAYER.maxFallSpeed);
     this.body.setGravityY(GRAVITY);
   }
@@ -193,12 +211,50 @@ export class PlayerMovement {
       }
     }
 
-    const clinging = this.shouldWallCling(timeMs);
+    // ─── Slide pole takes precedence over wall cling ─────────────────
+    // When side-touching a slide pole and not pressing crouch/away, the
+    // player rides the pole at PLAYER.slidePoleSpeed. Press JUMP to push
+    // off horizontally + small upward kick. Press CROUCH or push AWAY
+    // to release (free-fall through the regular path; if crouch is held
+    // while airborne, the ground-pound block below will then take over —
+    // makes "ride pole down, press crouch, slam" a natural chain).
+    //
+    // Only fires while descending: rising past a pole keeps the kid's
+    // upward momentum intact (no surprise vy-clamp).
+    let onSlidePole = false;
+    const axisX = this.input.axisX();
+    const sideForCheck = this.wallSide as -1 | 1;
+    const pushingAwayFromPole =
+      (this.wallSide === 1 && axisX < -0.2) ||
+      (this.wallSide === -1 && axisX > 0.2);
+    if (
+      !this.grounded &&
+      this.wallSide !== 0 &&
+      !dashing &&
+      !knockedBack &&
+      !this.ledgeGrab &&
+      this.findSlidePole &&
+      this.body.velocity.y >= 0 &&
+      !this.input.held('crouch') &&
+      !pushingAwayFromPole
+    ) {
+      const info = this.findSlidePole(
+        this.body.x,
+        this.body.x + this.body.width,
+        this.body.y + this.body.height / 2,
+        sideForCheck,
+      );
+      if (info) onSlidePole = true;
+    }
+
+    const clinging = !onSlidePole && this.shouldWallCling(timeMs);
 
     if (dashing) {
       this.body.setVelocityX(PLAYER.dashSpeed * this.dashDir);
       this.body.setGravityY(0);
       this.body.setVelocityY(0);
+    } else if (onSlidePole) {
+      this.applySlidePole(timeMs);
     } else if (clinging) {
       this.applyWallCling(timeMs);
     } else if (knockedBack) {
@@ -490,6 +546,39 @@ export class PlayerMovement {
       // lastJumpPressAt next frame and trigger an instant air-jump
       // during the wall-jump-lockout window.
       this.input.consumePress('jump');
+    }
+  }
+
+  /**
+   * Slide pole — controlled descent. Different shape from wall cling:
+   *   - No sticky window (descent starts at slidePoleSpeed immediately).
+   *   - Press JUMP → push off horizontally with small upward kick.
+   *   - Press CROUCH (or DOWN axis) → release: gravity + free fall.
+   *   - Push AWAY → release with a tiny lateral push.
+   *
+   * The dispatcher in update() doesn't call this if crouch is held or
+   * if the player is pushing away — those release the slide and the
+   * normal physics branch runs instead. So inside applySlidePole we
+   * know the player intends to ride.
+   */
+  private applySlidePole(timeMs: number): void {
+    // Constant slow descent.
+    this.body.setGravityY(0);
+    this.body.setVelocityY(PLAYER.slidePoleSpeed);
+    this.body.setVelocityX(0);
+
+    // Buffered jump → push off in the AWAY direction.
+    const withinBuffer = timeMs - this.lastJumpPressAt <= PLAYER.jumpBufferMs;
+    if (withinBuffer) {
+      this.body.setVelocityX(-this.wallSide * PLAYER.slidePolePushX);
+      this.body.setVelocityY(PLAYER.slidePolePushY);
+      this.wallJumpLockoutUntil = timeMs + PLAYER.wallJumpLockoutMs;
+      this.lastJumpPressAt = -Infinity;
+      this.jumpHeldThisJump = true;
+      this.airJumpsRemaining = PLAYER.airJumps;
+      this.facing = -this.wallSide as 1 | -1;
+      this.input.consumePress('jump');
+      this.body.setGravityY(GRAVITY);
     }
   }
 

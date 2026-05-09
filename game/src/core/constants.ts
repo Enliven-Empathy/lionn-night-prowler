@@ -43,6 +43,18 @@ export const PLAYER = {
    *  as a fatal impact via the existing patrol fall-kill check. */
   poundSpeed: 950,
 
+  // Slide pole — controlled vertical descent.
+  /** Constant downward speed while riding a slide pole. Slow enough that
+   *  the kid feels in control (220 px/s ≈ 3.5 px/frame at 60fps), well
+   *  below natural terminal fall speeds. */
+  slidePoleSpeed: 220,
+  /** Horizontal velocity imparted on jump push-off from a slide pole.
+   *  A bit lower than wall-jump's 360 because the slide pole is meant
+   *  for descending more than for chaining traversal. */
+  slidePolePushX: 320,
+  /** Vertical velocity imparted on jump push-off (negative = up). */
+  slidePolePushY: -350,
+
   // Wall cling: stick to a wall while pressing toward it in the air.
   /** First-contact stick duration. While clinging within this window the
    *  player's vy is clamped to 0 — they stop dead on the wall. Gives a
