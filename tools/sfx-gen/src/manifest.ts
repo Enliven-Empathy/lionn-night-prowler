@@ -276,10 +276,10 @@ export const SFX_MANIFEST: SfxEntry[] = [
     key: 'music_courtyard',
     filename: 'music_courtyard.mp3',
     scope: 'music',
-    triggeredBy: 'GameScene.create (looped throughout the run)',
+    triggeredBy: 'GameScene.create (crossfaded loop, ~20s per iteration)',
     loop: true,
-    prompt: 'Dark fantasy moonlit ruined palace ambient music loop, slow haunting strings, distant violet shadow magic shimmer, royal lion crest melancholy, low brooding undertone, no vocals',
+    prompt: 'Soft gentle dark fantasy ambient music, slow peaceful piano motif with subtle violet shadow shimmer, calm moonlit moment, light brooding pads underneath, low background presence, no drums, no vocals, kid-friendly background music',
     durationSec: 22,
-    promptInfluence: 0.4,
+    promptInfluence: 0.35,
   },
 ];

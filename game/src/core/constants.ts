@@ -20,8 +20,8 @@ export const PLAYER = {
   jumpBufferMs: 120,
 
   dashSpeed: 1400,
-  dashDurationMs: 95,
-  dashCooldownMs: 520,
+  dashDurationMs: 67,    // was 95 — another 30% shorter (133px → ~94px burst)
+  dashCooldownMs: 380,   // shorter dash + faster recovery keeps it punchy
 
   // Double jump: one extra mid-air jump, recharges on ground/wall-jump.
   airJumps: 1,
@@ -39,13 +39,24 @@ export const PLAYER = {
   hurtKnockback: { x: 220, y: -260 },
   hurtInvulnMs: 700,
 
-  // Reachability: how high above its origin the player can rise.
-  //   single jump  ½·v²/g = 570²/(2·1700) ≈ 95.6 px
-  //   double jump  + 520²/(2·1700) ≈ 79.5 px
-  //   total ~175 px — cap at 160 for a safety margin.
-  jumpReachPx: 160,
-  // Wall-jump bonus reach when a wall is adjacent (cling height + jump arc).
-  wallJumpBonusReachPx: 110,
+  // Reachability: how high above the *ground top* a platform's TOP can sit
+  // and still be landable. This is NOT the body-center peak — it accounts for:
+  //   - body half-height (32 px) — the player's feet must reach the platform top
+  //   - a safety margin so jump-buffering edge cases still work
+  //
+  // Math:
+  //   single jump body-center rise:  570²/(2·1700) = 95.6 px
+  //   double jump body-center rise: +520²/(2·1700) = 79.5 px
+  //   total body-center rise: ~175 px → max body-bottom rise: same ~175 px
+  //   So the highest platform-top above ground-top that the player can stand
+  //   on is ~175 - 0 (feet at peak) = ~175 px. We cap at 130 for a generous
+  //   safety margin (player can still reach with margin even with imperfect timing).
+  jumpReachPx: 130,
+  // Wall-jump bonus when a wall is adjacent (cling height + wall-launch arc).
+  // Wall-jump velocity is -540, so an additional ~85 px above cling height,
+  // and the player can re-double-jump from there. We cap the bonus at 80
+  // for safety (so wall-paired platforms top out ~210 px above ground).
+  wallJumpBonusReachPx: 80,
 } as const;
 
 export const COMBAT = {

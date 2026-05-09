@@ -107,10 +107,16 @@ export class InputController {
       btn(pad, BTN.TRIANGLE_Y);
 
     const debugHeld = this.k('debug1');
-    // Restart: keyboard R, gamepad Start/Options (button 9). Space is also a
-    // valid restart but is handled by GameOverOverlay's window listener so it
-    // doesn't double-fire mid-jump on revive.
-    const restartHeld = this.k('restart1') || btn(pad, BTN.START);
+    // Restart on game-over: keyboard R, plus a *generous* gamepad binding so
+    // the kid can't miss it. Standard Start is button 9, but DualSense over
+    // BT sometimes reports differently; we accept Start, Select/Share,
+    // Touchpad, and even Cross while game-over.
+    const restartHeld =
+      this.k('restart1') ||
+      btn(pad, BTN.START) ||
+      btn(pad, BTN.SELECT) ||
+      btn(pad, 17) || // PS5 touchpad click on standard layout
+      btn(pad, BTN.CROSS_A);
 
     this.set('left', leftHeld);
     this.set('right', rightHeld);

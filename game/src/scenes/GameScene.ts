@@ -35,6 +35,8 @@ export class GameScene extends Phaser.Scene {
   private audio!: AudioManager;
   private deathY = 820;
   private ended = false;
+  private restartWasHeld = false;
+  private restartArmedAt = 0;
 
   private distanceText!: Phaser.GameObjects.Text;
   private bestDistance = 0;
@@ -62,6 +64,8 @@ export class GameScene extends Phaser.Scene {
     this.patrols = [];
     this.collectibles = [];
     this.score = 0;
+    this.restartWasHeld = true; // armed-suppressed: ignore button still held from previous run
+    this.restartArmedAt = 0;
 
     this.physics.world.setBounds(0, -300, WORLD_WIDTH, WORLD_HEIGHT + 300);
     this.physics.world.setBoundsCollision(true, true, true, false);
@@ -208,13 +212,19 @@ export class GameScene extends Phaser.Scene {
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
       this.hpBar.set(this.player.hp, this.player.maxHp);
-    } else if (this.controls.justPressed('restart', 32)) {
-      // PS Start / keyboard R routes here once the run has ended. Space + R + click
-      // also work via GameOverOverlay's own listeners; this branch covers the
-      // gamepad path that the overlay can't see.
-      this.controls.consumePress('restart');
-      this.audio.play(SFX.UI_RESTART);
-      this.scene.restart();
+    } else {
+      // Restart detection on the *rising edge* of held — gamepad-friendly.
+      // Skips the first ~250ms after game-over so the player can release any
+      // button still held from the death input (otherwise we'd insta-restart).
+      const heldNow = this.controls.held('restart');
+      if (this.restartArmedAt === 0) this.restartArmedAt = timeMs + 250;
+      const armed = timeMs >= this.restartArmedAt;
+      if (armed && heldNow && !this.restartWasHeld) {
+        this.audio.play(SFX.UI_RESTART);
+        this.scene.restart();
+        return;
+      }
+      this.restartWasHeld = heldNow;
     }
 
     this.debugOverlay.update(

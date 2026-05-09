@@ -97,7 +97,7 @@ export class GamepadDebug {
       lines.push('  jump    = btn 0 (✕ Cross)');
       lines.push('  attack  = btn 2 (□ Square)  OR btn 3 (△ Triangle)');
       lines.push('  dash    = btn 4/5/6/7 (L1/R1/L2/R2)');
-      lines.push('  restart = btn 9 (Start/Options)   on game over');
+      lines.push('  restart = btn 9 Start  OR 8 Share  OR 17 Touchpad  OR 0 Cross');
       lines.push('  move    = axis 0 (left stick)     OR D-pad 14/15');
       lines.push('');
       lines.push('press G to hide this panel');
