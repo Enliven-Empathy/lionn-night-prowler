@@ -33,8 +33,22 @@ export class GameScene extends Phaser.Scene {
   private damage!: DamageSystem;
   private fx!: HitFx;
   private audio!: AudioManager;
-  private deathY = 820;
+  // Pit-kill threshold. Lower = faster death (less time for floating platforms
+  // to "save" the player and create the impression that death is inconsistent).
+  private deathY = 760;
+  // Hard safety floor. If for any reason deathY didn't trigger (entity update
+  // exception, race, etc.), this catches the player guaranteed.
+  private hardFloorY = 1500;
   private ended = false;
+  /** Wall-clock timestamp (Date.now()) at which the run ended. Used for
+   *  auto-restart elapsed-time checks. Wall-clock is more reliable than
+   *  scene/game time — Phaser's loop throttles when the tab is backgrounded
+   *  or the canvas loses focus, but Date.now() always advances. */
+  private endedAtWall = -Infinity;
+  private autoRestartFired = false;
+  /** Browser-level setTimeout fallback. Fires even if the rAF loop is
+   *  paused/throttled; cleared on manual restart or scene shutdown. */
+  private autoRestartTimerId: number | null = null;
   private restartWasHeld = false;
   private restartArmedAt = 0;
 
@@ -64,6 +78,12 @@ export class GameScene extends Phaser.Scene {
     this.patrols = [];
     this.collectibles = [];
     this.score = 0;
+    this.endedAtWall = -Infinity;
+    this.autoRestartFired = false;
+    if (this.autoRestartTimerId !== null) {
+      window.clearTimeout(this.autoRestartTimerId);
+      this.autoRestartTimerId = null;
+    }
     this.restartWasHeld = true; // armed-suppressed: ignore button still held from previous run
     this.restartArmedAt = 0;
 
@@ -159,6 +179,15 @@ export class GameScene extends Phaser.Scene {
       // eslint-disable-next-line no-console
       console.log('[gamepad] connected:', (e as GamepadEvent).gamepad.id);
     });
+
+    // Clear pending auto-restart timer when the scene shuts down so it
+    // doesn't fire against a destroyed scene.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.autoRestartTimerId !== null) {
+        window.clearTimeout(this.autoRestartTimerId);
+        this.autoRestartTimerId = null;
+      }
+    });
   }
 
   override update(timeMs: number, dtMs: number): void {
@@ -171,6 +200,25 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!this.ended) {
+      // ─── Death detection runs FIRST so nothing downstream can swallow it ───
+      // Hard safety floor: catches the player no matter what state they're in.
+      if (this.player.sprite.y > this.hardFloorY && !this.player.isDead()) {
+        // eslint-disable-next-line no-console
+        console.log(`[GameScene] hard-floor kill at y=${this.player.sprite.y.toFixed(0)}`);
+        this.player.kill();
+      }
+      // Pit kill: the normal "you fell off into nothing" trigger.
+      if (this.player.sprite.y > this.deathY && !this.player.isDead()) {
+        // eslint-disable-next-line no-console
+        console.log(`[GameScene] pit kill at y=${this.player.sprite.y.toFixed(0)} (deathY=${this.deathY})`);
+        this.player.kill();
+      }
+      if (this.player.isDead()) {
+        this.endRun('gameOver');
+        return; // bail; this frame's other entity updates aren't needed
+      }
+
+      // ─── Normal play ─────────────────────────────────────────────
       this.player.update(timeMs, dtSec, this.controls);
       this.fx.update(timeMs);
 
@@ -201,30 +249,41 @@ export class GameScene extends Phaser.Scene {
       this.cullPatrols();
       this.cullCollectibles();
 
-      // Pit death.
-      if (this.player.sprite.y > this.deathY && !this.player.isDead()) {
-        this.player.kill();
-      }
-      if (this.player.isDead()) {
-        this.endRun('gameOver');
-      }
-
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
       this.hpBar.set(this.player.hp, this.player.maxHp);
     } else {
+      // ─── Game-over state ────────────────────────────────────────
       // Restart detection on the *rising edge* of held — gamepad-friendly.
-      // Skips the first ~250ms after game-over so the player can release any
-      // button still held from the death input (otherwise we'd insta-restart).
+      // Skips the first ~250ms so the death-input button doesn't insta-restart.
       const heldNow = this.controls.held('restart');
       if (this.restartArmedAt === 0) this.restartArmedAt = timeMs + 250;
       const armed = timeMs >= this.restartArmedAt;
       if (armed && heldNow && !this.restartWasHeld) {
+        if (this.autoRestartTimerId !== null) {
+          window.clearTimeout(this.autoRestartTimerId);
+          this.autoRestartTimerId = null;
+        }
         this.audio.play(SFX.UI_RESTART);
         this.scene.restart();
         return;
       }
       this.restartWasHeld = heldNow;
+
+      // Frame-based auto-restart using WALL-CLOCK (Date.now), not scene time.
+      // Phaser's scene/game clock can pause when the tab is backgrounded or
+      // canvas loses focus — using wall-clock means this check always reflects
+      // real elapsed time. The window.setTimeout in endRun() is the primary
+      // mechanism; this is belt-and-suspenders for when both fire on the same
+      // frame.
+      if (!this.autoRestartFired && Date.now() - this.endedAtWall > 3500) {
+        // eslint-disable-next-line no-console
+        console.log(`[GameScene] auto-restart firing (frame check, elapsed ${Date.now() - this.endedAtWall}ms)`);
+        this.autoRestartFired = true;
+        this.audio.play(SFX.UI_RESTART);
+        this.scene.restart();
+        return;
+      }
     }
 
     this.debugOverlay.update(
@@ -238,6 +297,25 @@ export class GameScene extends Phaser.Scene {
   private endRun(kind: 'gameOver' | 'win'): void {
     if (this.ended) return;
     this.ended = true;
+    this.endedAtWall = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; auto-restart in 3500ms`);
+
+    // Schedule auto-restart via window.setTimeout. Fires from the browser's
+    // main event loop, independent of Phaser's rAF / scene-time clocks. This
+    // is what catches the "tab is backgrounded" / "game loop throttled" cases
+    // where the frame-based elapsed-time check in update() can't fire fast
+    // enough because update() itself isn't running.
+    this.autoRestartTimerId = window.setTimeout(() => {
+      if (!this.autoRestartFired && this.ended) {
+        // eslint-disable-next-line no-console
+        console.log('[GameScene] auto-restart firing (window.setTimeout fallback)');
+        this.autoRestartFired = true;
+        this.audio.play(SFX.UI_RESTART);
+        this.scene.restart();
+      }
+    }, 3500);
+
     const dist = this.level.distance(this.player.sprite.x);
     if (dist > this.bestDistance) {
       this.bestDistance = dist;
@@ -264,18 +342,8 @@ export class GameScene extends Phaser.Scene {
         this.scene.restart();
       });
     });
-
-    // Auto-restart so we never get stuck on a death screen waiting for the
-    // controller. Manual R / Cross / Start still works and triggers earlier.
-    // The `if (this.ended)` guard makes this a no-op if a manual restart
-    // already fired in the meantime (Phaser cancels delayedCalls on
-    // scene.restart anyway, but this is belt-and-suspenders).
-    this.time.delayedCall(3500, () => {
-      if (this.ended) {
-        this.audio.play(SFX.UI_RESTART);
-        this.scene.restart();
-      }
-    });
+    // Auto-restart is checked frame-by-frame in update(), not via a delayedCall.
+    // See the `else` branch in update() — uses timeMs - endedAt > 3500.
   }
 
   private formatBestDistance(): string {
