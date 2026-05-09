@@ -51,6 +51,11 @@ export class GameScene extends Phaser.Scene {
   /** Browser-level setTimeout fallback. Fires even if the rAF loop is
    *  paused/throttled; cleared on manual restart or scene shutdown. */
   private autoRestartTimerId: number | null = null;
+  /** Nuclear-option page-reload timer. Fires at 9.5 s post-death IFF the
+   *  scene is still in the ended state — independent of autoRestartFired,
+   *  since the whole purpose of the nuclear option is to recover when an
+   *  earlier restart claimed success but the scene-manager actually stalled. */
+  private nuclearReloadTimerId: number | null = null;
   private restartWasHeld = false;
   private restartArmedAt = 0;
 
@@ -86,6 +91,10 @@ export class GameScene extends Phaser.Scene {
     if (this.autoRestartTimerId !== null) {
       window.clearTimeout(this.autoRestartTimerId);
       this.autoRestartTimerId = null;
+    }
+    if (this.nuclearReloadTimerId !== null) {
+      window.clearTimeout(this.nuclearReloadTimerId);
+      this.nuclearReloadTimerId = null;
     }
     this.restartWasHeld = true; // armed-suppressed: ignore button still held from previous run
     this.restartArmedAt = 0;
@@ -183,12 +192,17 @@ export class GameScene extends Phaser.Scene {
       console.log('[gamepad] connected:', (e as GamepadEvent).gamepad.id);
     });
 
-    // Clear pending auto-restart timer when the scene shuts down so it
-    // doesn't fire against a destroyed scene.
+    // Clear ALL pending timers on scene shutdown so they don't fire against
+    // a destroyed scene (or, in the nuclear timer's case, blow up the next
+    // scene with a spurious page reload).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.autoRestartTimerId !== null) {
         window.clearTimeout(this.autoRestartTimerId);
         this.autoRestartTimerId = null;
+      }
+      if (this.nuclearReloadTimerId !== null) {
+        window.clearTimeout(this.nuclearReloadTimerId);
+        this.nuclearReloadTimerId = null;
       }
     });
   }
@@ -327,13 +341,17 @@ export class GameScene extends Phaser.Scene {
     this.scheduleAutoRestart(5500); // backup if primary callback threw
     this.scheduleAutoRestart(7500); // second backup
 
-    // NUCLEAR last-resort: if auto-restart somehow hasn't fired by 9.5 s,
-    // hard-reload the entire page. A page reload can't get stuck the way
-    // an in-engine state machine can.
-    window.setTimeout(() => {
-      if (this.ended && !this.autoRestartFired) {
+    // NUCLEAR last-resort: if the scene is still in the ended state at +9.5 s,
+    // hard-reload the page. Crucially does NOT check autoRestartFired —
+    // its whole purpose is to recover from cases where an earlier layer
+    // claimed success (autoRestartFired = true) but scene.restart() actually
+    // stalled (Phaser scene-manager corruption, asset re-load hang, partial
+    // create() throw). The timer is cleared on SHUTDOWN so a successful
+    // restart of the next scene won't accidentally trigger a page reload.
+    this.nuclearReloadTimerId = window.setTimeout(() => {
+      if (this.ended) {
         // eslint-disable-next-line no-console
-        console.warn('[GameScene] auto-restart didn\'t fire in 9.5s — reloading page');
+        console.warn('[GameScene] still ended at +9.5s — reloading page (nuclear)');
         try { window.location.reload(); } catch { /* truly nothing left */ }
       }
     }, 9500);
