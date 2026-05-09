@@ -202,18 +202,25 @@ export class PlayerMovement {
       this.lastJumpPressAt = -Infinity;
       this.lastGroundedAt = -Infinity;
       this.jumpHeldThisJump = true;
+      // Critical: consume the input press too, otherwise a held jump
+      // button refreshes lastJumpPressAt next frame and the air-jump
+      // branch silently spends the double-jump from the same press.
+      this.input.consumePress('jump');
       return;
     }
 
-    // Double jump: only consume on a *fresh* jump press (justPressed window).
-    // Don't fire while still inside coyote, since that's a regular jump.
-    const freshJump = this.input.justPressed('jump', 16);
+    // Air (double) jump. Uses the same 120 ms jumpBuffer as the ground
+    // jump (was a tight 16 ms single-frame window that sometimes missed
+    // presses, especially under variable frame timing — that was the
+    // "double jump didn't work" symptom). The wall-side gate is dropped
+    // because applyJump only runs when NOT clinging, so the wall-jump
+    // path can't conflict; brushing a wall mid-air no longer eats the
+    // double jump.
     if (
-      freshJump &&
+      withinBuffer &&
       !this.grounded &&
       !withinCoyote &&
-      this.airJumpsRemaining > 0 &&
-      this.wallSide === 0
+      this.airJumpsRemaining > 0
     ) {
       this.body.setVelocityY(PLAYER.doubleJumpVelocity);
       this.airJumpsRemaining--;
@@ -242,12 +249,32 @@ export class PlayerMovement {
     this.dashCooldownUntil = this.dashEndsAt + PLAYER.dashCooldownMs;
   }
 
-  private shouldWallCling(_timeMs: number): boolean {
+  private shouldWallCling(timeMs: number): boolean {
     if (this.grounded) return false;
     if (this.wallSide === 0) return false;
-    if (this.body.velocity.y < 0) return false; // only on descent
+
     const axisX = this.input.axisX();
-    return (this.wallSide === -1 && axisX < -0.2) || (this.wallSide === 1 && axisX > 0.2);
+    const pushingToward =
+      (this.wallSide === -1 && axisX < -0.2) || (this.wallSide === 1 && axisX > 0.2);
+    const pushingAway =
+      (this.wallSide === -1 && axisX > 0.2) || (this.wallSide === 1 && axisX < -0.2);
+
+    // Initial engage requires (a) not actively rising — feels wrong to
+    // mid-jump-snap onto a wall — and (b) pressing TOWARD the wall to
+    // commit. Once committed, the cling latches (next branch).
+    if (!this.wasClingLastFrame) {
+      return this.body.velocity.y >= 0 && pushingToward;
+    }
+
+    // LATCH: once stuck, you stay stuck even on neutral input. Lets the
+    // player release the stick, read the situation, then either jump or
+    // press AWAY to drop. Pressing AWAY releases — UNLESS a jump press is
+    // buffered the same frame, so press-AWAY+JUMP still resolves through
+    // the wall-jump path (which fires in the away direction automatically).
+    const jumpBuffered = timeMs - this.lastJumpPressAt <= PLAYER.jumpBufferMs;
+    if (pushingAway && !jumpBuffered) return false;
+
+    return true;
   }
 
   private applyWallCling(timeMs: number): void {
@@ -280,6 +307,10 @@ export class PlayerMovement {
       this.jumpHeldThisJump = true;
       this.airJumpsRemaining = PLAYER.airJumps; // wall jump refills the air jump
       this.facing = -this.wallSide as 1 | -1;
+      // Consume the input press so a held jump button doesn't refresh
+      // lastJumpPressAt next frame and trigger an instant air-jump
+      // during the wall-jump-lockout window.
+      this.input.consumePress('jump');
     }
   }
 
