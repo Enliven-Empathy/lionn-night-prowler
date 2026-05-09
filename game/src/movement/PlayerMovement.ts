@@ -50,6 +50,10 @@ export class PlayerMovement {
   private airJumpsRemaining = PLAYER.airJumps;
 
   private wallJumpLockoutUntil = -Infinity;
+  /** When the current wall cling began. Reset every time cling re-engages
+   *  (touch new wall, wall-jump and re-touch, etc). */
+  private wallClingStartedAt = -Infinity;
+  private wasClingLastFrame = false;
   private hurtUntil = -Infinity;
   private invulnUntil = -Infinity;
   private knockbackUntil = -Infinity;
@@ -112,6 +116,9 @@ export class PlayerMovement {
       this.applyVariableJumpCutoff();
       this.updateState(timeMs, dashing, hurt);
       this.updateFacing();
+      // Force any cling state to break — when control returns the next
+      // contact counts as a fresh stick.
+      this.wasClingLastFrame = false;
       return;
     }
 
@@ -140,6 +147,7 @@ export class PlayerMovement {
     this.updateCrouch();
     this.updateState(timeMs, dashing, hurt, clinging);
     this.updateFacing();
+    this.wasClingLastFrame = clinging;
   }
 
   snapshot(timeMs: number): MovementSnapshot {
@@ -243,8 +251,25 @@ export class PlayerMovement {
   }
 
   private applyWallCling(timeMs: number): void {
+    // First frame of a fresh cling — capture start time and snap vy to 0
+    // so the player visibly STICKS to the wall (no carry-over downward
+    // momentum from the entry-jump descent). This gives a clean beat to
+    // read the next move.
+    if (!this.wasClingLastFrame) {
+      this.wallClingStartedAt = timeMs;
+      this.body.setVelocityY(0);
+    }
+
+    // Sticky window: vy clamped to 0. After the window, vy can drift down
+    // to wallSlideSpeed (slow gentle descent — gives the player time to
+    // climb up by repeated wall-jumping or to drop intentionally without
+    // panic).
+    const stickElapsed = timeMs - this.wallClingStartedAt;
+    const sticky = stickElapsed < PLAYER.wallStickyMs;
+    const targetMaxVy = sticky ? 0 : PLAYER.wallSlideSpeed;
+
     this.body.setGravityY(GRAVITY * 0.3);
-    this.body.setVelocityY(Math.min(this.body.velocity.y, PLAYER.wallSlideSpeed));
+    this.body.setVelocityY(Math.min(this.body.velocity.y, targetMaxVy));
 
     const withinBuffer = timeMs - this.lastJumpPressAt <= PLAYER.jumpBufferMs;
     if (withinBuffer) {

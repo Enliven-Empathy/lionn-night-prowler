@@ -30,7 +30,13 @@ export const PLAYER = {
   maxFallSpeed: 1400,
 
   // Wall cling: stick to a wall while pressing toward it in the air.
-  wallSlideSpeed: 110,
+  /** First-contact stick duration. While clinging within this window the
+   *  player's vy is clamped to 0 — they stop dead on the wall. Gives a
+   *  beat to read the next wall-jump direction. After the window closes,
+   *  vy is clamped to wallSlideSpeed (gentle descent) until they jump
+   *  off or release. */
+  wallStickyMs: 500,
+  wallSlideSpeed: 50,
   wallJumpVelocityX: 360,
   wallJumpVelocityY: -540,
   wallJumpLockoutMs: 180,
