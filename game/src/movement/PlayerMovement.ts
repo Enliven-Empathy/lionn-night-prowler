@@ -201,6 +201,20 @@ export class PlayerMovement {
       this.body.setGravityY(GRAVITY);
       this.applyHorizontal(dtSec, timeMs);
       this.applyJump(timeMs);
+      // Mario-style ground pound: while airborne with crouch held, force
+      // a sharp downward velocity. Doesn't fight a stronger natural
+      // descent (terminal-velocity dives unaffected). Lands hard enough
+      // that the patrol fall-kill threshold (700) is exceeded — so a
+      // pound onto an enemy turns into a kill via the existing impact
+      // damage path.
+      if (
+        !this.grounded &&
+        !knockedBack &&
+        this.input.held('crouch') &&
+        this.body.velocity.y < PLAYER.poundSpeed
+      ) {
+        this.body.setVelocityY(PLAYER.poundSpeed);
+      }
     }
 
     this.applyVariableJumpCutoff();

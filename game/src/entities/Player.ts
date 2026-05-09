@@ -255,53 +255,44 @@ export class Player {
   }
 
   /**
-   * Resize the physics body AND the visual sprite when crouch state
-   * changes. Both anchor to the floor: body.bottom and visual bottom
-   * share the same world Y across the transition.
+   * Resize for crouch by changing ONLY the sprite's scaleY. Phaser's
+   * arcade body auto-syncs body.height each physics tick via
    *
-   * Phaser's Body sync formula (used in pre/postUpdate) is:
+   *     body.height = body.sourceHeight * abs(sprite.scaleY)
    *
-   *     body.y    = sprite.y - sprite.scaleY * sprite.displayOriginY + offset.y
-   *     sprite.y  = body.y   - offset.y + sprite.scaleY * sprite.displayOriginY
+   * (Body.preUpdate, arcade/Body.js ~line 1015). sourceHeight was set to
+   * PLAYER.height (64) in the Player constructor and is never changed
+   * after — so scaleY=0.5625 gives body.height=36, scaleY=1 gives 64,
+   * automatically and atomically with the visual.
    *
-   * The KEY is that the formula uses *scaled* `scaleY * displayOriginY`,
-   * not the unscaled sprite.height — so when scaleY changes (which is
-   * exactly what crouch does), the half-height term in both directions
-   * automatically tracks displayHeight. With body.height set to the
-   * scaled height too, offset = 0 satisfies both directions and lands
-   * body.bottom == sprite display bottom. No correction needed.
+   * Earlier attempts called body.setSize(38, 36) on crouch, which set
+   * sourceHeight=36. The auto-sync then did 36 * 0.5625 = 20.25, so the
+   * body collapsed to less than HALF its visual height. That left the
+   * physics footprint floating 28 px above the platform after a
+   * crouch→uncrouch cycle (uncrouch hit setSize again with sourceHeight=64
+   * so the next sync did 64*1=64, but the resize had teleported the body
+   * center mid-cycle and Phaser couldn't recover the foot anchor).
    *
-   * Earlier versions of this method picked a non-zero offset (28 in the
-   * original; 14 in my first fix attempt), which caused the body to
-   * compute as 14 px below ground at preUpdate, get push-corrected by
-   * the collider, and then *postUpdate* wrote sprite.y back using the
-   * corrected body — yanking the visual 14 px upward every frame. That
-   * was the rapid "collapse/expand" symptom on R2 taps: one frame the
-   * sprite landed at the correct crouch position, the next physics tick
-   * snapped it back to the standing center.
-   *
-   * Crouch only fires while grounded (PlayerMovement gates on grounded),
-   * so writing sprite.y here is safe — body is at rest and the next
-   * pre/postUpdate cycle confirms the new resting position.
+   * sprite.y is anchored so visual bottom (and therefore body bottom,
+   * since offset=0 and the auto-sync keeps scaled-height matched) sits
+   * exactly on footY. Crouch only fires while grounded so writing
+   * sprite.y mid-frame is safe — the body's at rest and pre/postUpdate
+   * will re-sync to the same numbers next tick.
    */
   private applyCrouchResize(crouching: boolean): void {
     if (crouching === this.wasCrouching) return;
     this.wasCrouching = crouching;
 
-    const floorY = this.body.y + this.body.height;
-    const newH = crouching ? PLAYER.crouchHeight : PLAYER.height;
+    // Read foot Y from the SPRITE's display bounds (Phaser will sync the
+    // body's position from the sprite, so the sprite is the source of
+    // truth here — reading body.y + body.height instead can give a stale
+    // answer if the body has already auto-synced for the new scaleY).
+    const footY = this.sprite.y + this.sprite.displayHeight / 2;
+    const targetScaleY = crouching ? PLAYER.crouchHeight / PLAYER.height : 1;
 
-    this.sprite.setScale(1, newH / PLAYER.height);
-    this.sprite.y = floorY - newH / 2;
-    this.body.setSize(PLAYER.width, newH);
-    this.body.setOffset(0, 0);
-    // Defensive: pin body.y so the foot stays at floorY even before the
-    // next physics preUpdate re-syncs from sprite. Without this, any code
-    // that reads body.y between scene.update and physics step (e.g. the
-    // patrol hazard probe iterating on the same tick) would see a body
-    // briefly recentered by setSize's center=true semantic. Sync will
-    // confirm the same value next tick; this is purely belt-and-braces.
-    this.body.y = floorY - newH;
+    this.sprite.setScale(1, targetScaleY);
+    // displayHeight reflects the NEW scaleY immediately.
+    this.sprite.y = footY - this.sprite.displayHeight / 2;
   }
 
   /**

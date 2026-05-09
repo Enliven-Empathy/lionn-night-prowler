@@ -37,6 +37,11 @@ export const PLAYER = {
   doubleJumpVelocity: -520,
 
   maxFallSpeed: 1400,
+  /** Mario-style ground pound: while airborne with crouch held, vy is
+   *  clamped to (at least) this downward speed. Tuned above the patrol
+   *  fall-kill threshold (700) so a pound landing on an enemy registers
+   *  as a fatal impact via the existing patrol fall-kill check. */
+  poundSpeed: 950,
 
   // Wall cling: stick to a wall while pressing toward it in the air.
   /** First-contact stick duration. While clinging within this window the
