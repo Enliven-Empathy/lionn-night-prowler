@@ -366,24 +366,40 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(700, () => this.audio.play(SFX.UI_BEST_SCORE));
     }
     this.cameras.main.flash(180, 255, 60, 90, false);
-    // Use window.setTimeout — same reasoning as the auto-restart timer.
-    // scene.time.delayedCall depends on the scene clock, which throttles
-    // when the canvas loses focus. We want the overlay to appear on
-    // wall-clock time so the player ALWAYS sees a death screen.
-    window.setTimeout(() => {
-      if (this.ended && !this.autoRestartFired) {
-        this.endOverlay.show(kind, () => {
-          if (this.autoRestartTimerId !== null) {
-            window.clearTimeout(this.autoRestartTimerId);
-            this.autoRestartTimerId = null;
-          }
-          this.audio.play(SFX.UI_RESTART);
-          this.scene.restart();
-        });
+    // Reflect death in the HP bar IMMEDIATELY — the bar sits in the
+    // !ended branch of update() so without this it'd freeze at the last
+    // pre-death value (was confusing players: bar still green while
+    // they're already dead).
+    this.hpBar.set(this.player.hp, this.player.maxHp);
+
+    // Show the overlay SYNCHRONOUSLY. We used to delay 420ms to let the
+    // camera flash play first, but any delay is a window where the player
+    // sees a "stuck mid-air with no death screen" state and reasonably
+    // assumes the game is broken. Better: overlay appears with the flash.
+    this.showEndOverlay(kind);
+
+    // Belt-and-suspenders: if for any reason the overlay didn't actually
+    // render (scene-state weirdness, error swallowed somewhere), retry at
+    // 1500ms and 2800ms. Idempotent — show() short-circuits if already
+    // visible.
+    window.setTimeout(() => this.showEndOverlay(kind), 1500);
+    window.setTimeout(() => this.showEndOverlay(kind), 2800);
+    // Auto-restart at 3500ms is scheduled above + frame-checked in update().
+  }
+
+  private showEndOverlay(kind: 'gameOver' | 'win'): void {
+    if (!this.ended || this.autoRestartFired) return;
+    if (this.endOverlay.visible) return;
+    // eslint-disable-next-line no-console
+    console.log('[GameScene] showEndOverlay firing');
+    this.endOverlay.show(kind, () => {
+      if (this.autoRestartTimerId !== null) {
+        window.clearTimeout(this.autoRestartTimerId);
+        this.autoRestartTimerId = null;
       }
-    }, 420);
-    // Auto-restart is checked frame-by-frame in update(), not via a delayedCall.
-    // See the `else` branch in update() — uses Date.now() - endedAtWall > 3500.
+      this.audio.play(SFX.UI_RESTART);
+      this.scene.restart();
+    });
   }
 
   private formatBestDistance(): string {
