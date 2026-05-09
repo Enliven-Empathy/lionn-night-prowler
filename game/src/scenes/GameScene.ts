@@ -4,6 +4,7 @@ import { InputController } from '../core/input';
 import { Player } from '../entities/Player';
 import { Patrol } from '../entities/Patrol';
 import { Collectible } from '../entities/Collectible';
+import { Heart } from '../entities/Heart';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
@@ -22,6 +23,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private patrols: Patrol[] = [];
   private collectibles: Collectible[] = [];
+  private hearts: Heart[] = [];
   private staticGroupRef!: Phaser.Physics.Arcade.StaticGroup;
   private level!: EndlessLevelHandle;
   private debugOverlay!: DebugOverlay;
@@ -77,6 +79,7 @@ export class GameScene extends Phaser.Scene {
     this.debugHitboxes = false;
     this.patrols = [];
     this.collectibles = [];
+    this.hearts = [];
     this.score = 0;
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
@@ -223,10 +226,11 @@ export class GameScene extends Phaser.Scene {
       this.fx.update(timeMs);
 
       // Lazy-generate the next chunks ahead of the player, then materialize any
-      // enemy and collectible spawn requests those chunks emitted.
+      // enemy / collectible / heart spawn requests those chunks emitted.
       this.level.ensureGenerated(this.player.sprite.x);
       this.drainEnemySpawns();
       this.drainCollectibleSpawns();
+      this.drainHeartSpawns();
 
       // Tick patrols. They need the player's position to chase/attack.
       const target = {
@@ -245,9 +249,18 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      // Cull patrols + collectibles that fell off the world or are far behind.
+      // Tick hearts + check pickup overlap. Hearts restore HP (capped at max).
+      for (const h of this.hearts) {
+        h.update(timeMs);
+        if (!h.collected && Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, h.hitRect())) {
+          this.collectHeart(h);
+        }
+      }
+
+      // Cull patrols / collectibles / hearts that fell off the world or are far behind.
       this.cullPatrols();
       this.cullCollectibles();
+      this.cullHearts();
 
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
@@ -368,6 +381,50 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private drainHeartSpawns(): void {
+    for (const s of this.level.drainHeartSpawns()) {
+      this.hearts.push(new Heart(this, s.x, s.y, 2));
+    }
+  }
+
+  private collectHeart(h: Heart): void {
+    h.collect();
+    const before = this.player.hp;
+    const after = Math.min(this.player.maxHp, before + h.healAmount);
+    const actualHeal = after - before;
+    this.player.hp = after;
+
+    // Even if the player was already at max HP we still play the chime so
+    // grabbing a heart never feels like nothing happened — but the popup
+    // says "FULL" instead of a number.
+    this.audio.play(SFX.PICKUP_CRYSTAL);
+
+    const popup = this.add.text(
+      h.container.x,
+      h.container.y - 8,
+      actualHeal > 0 ? `+${actualHeal} HP` : 'FULL',
+      {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '22px',
+        color: '#ffb8cc',
+        stroke: '#0b0816',
+        strokeThickness: 4,
+      },
+    );
+    popup.setOrigin(0.5, 0.5).setDepth(1200);
+    this.tweens.add({
+      targets: popup,
+      y: popup.y - 36,
+      alpha: 0,
+      duration: 700,
+      ease: 'Quad.easeOut',
+      onComplete: () => popup.destroy(),
+    });
+
+    // Brief HP-bar bump so the heal reads in the HUD too.
+    this.hpBar.set(this.player.hp, this.player.maxHp);
+  }
+
   private collectPickup(c: Collectible): void {
     c.collect();
     this.score += c.value;
@@ -426,6 +483,17 @@ export class GameScene extends Phaser.Scene {
       if (c.collected || c.container.x < cullX) {
         if (!c.collected) c.destroy();
         this.collectibles.splice(i, 1);
+      }
+    }
+  }
+
+  private cullHearts(): void {
+    const cullX = this.player.sprite.x - 1500;
+    for (let i = this.hearts.length - 1; i >= 0; i--) {
+      const h = this.hearts[i];
+      if (h.collected || h.container.x < cullX) {
+        if (!h.collected) h.destroy();
+        this.hearts.splice(i, 1);
       }
     }
   }

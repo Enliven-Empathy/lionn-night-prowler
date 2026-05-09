@@ -49,6 +49,11 @@ export interface CollectibleSpawn {
   tier: 1 | 2 | 3;
 }
 
+export interface HeartSpawn {
+  x: number;
+  y: number;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -61,6 +66,8 @@ export interface EndlessLevelHandle {
   drainEnemySpawns: () => EnemySpawn[];
   /** Returns and clears any collectible spawns buffered since the last call. */
   drainCollectibleSpawns: () => CollectibleSpawn[];
+  /** Returns and clears any heart (HP) spawns buffered since the last call. */
+  drainHeartSpawns: () => HeartSpawn[];
 }
 
 export interface EndlessLevelOptions {
@@ -75,6 +82,7 @@ export class EndlessLevel {
   private maxGenerated = -1;
   private pendingSpawns: EnemySpawn[] = [];
   private pendingCollectibles: CollectibleSpawn[] = [];
+  private pendingHearts: HeartSpawn[] = [];
 
   readonly spawnX = 120;
   readonly spawnY = 540;
@@ -108,6 +116,11 @@ export class EndlessLevel {
       drainCollectibleSpawns: () => {
         const out = this.pendingCollectibles;
         this.pendingCollectibles = [];
+        return out;
+      },
+      drainHeartSpawns: () => {
+        const out = this.pendingHearts;
+        this.pendingHearts = [];
         return out;
       },
     };
@@ -164,6 +177,27 @@ export class EndlessLevel {
     if (index >= 1) {
       this.scatterCollectibles(segments, index);
     }
+
+    // Hearts: rare HP pickups. Skip the first few chunks so the player
+    // doesn't see one before they've taken any damage.
+    if (index >= 3) {
+      this.maybeSpawnHeart(segments);
+    }
+  }
+
+  /**
+   * 25% chance per chunk to spawn a heart on a wide ground segment, hovering
+   * ~36 px above ground top so the player just walks/jumps into it.
+   */
+  private maybeSpawnHeart(segments: Segment[]): void {
+    if (this.rng() >= 0.25) return;
+    const grounds = segments.filter((s) => s.kind === 'ground' && s.w >= 200);
+    if (grounds.length === 0) return;
+    const pick = grounds[Math.floor(this.rng() * grounds.length)];
+    this.pendingHearts.push({
+      x: pick.x + pick.w / 2,
+      y: pick.y - 36,
+    });
   }
 
   /**
