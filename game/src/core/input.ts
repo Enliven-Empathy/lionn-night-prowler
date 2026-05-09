@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'attack' | 'debugToggle';
+export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'attack' | 'debugToggle' | 'restart';
 
 interface ActionState {
   held: boolean;
@@ -56,8 +56,9 @@ export class InputController {
     this.keys.dash1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.keys.attack1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.J);
     this.keys.debug1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F3);
+    this.keys.restart1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'attack', 'debugToggle'];
+    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'attack', 'debugToggle', 'restart'];
     for (const name of allActions) {
       this.actions.set(name, { held: false, pressedAt: -Infinity, releasedAt: -Infinity });
     }
@@ -106,6 +107,10 @@ export class InputController {
       btn(pad, BTN.TRIANGLE_Y);
 
     const debugHeld = this.k('debug1');
+    // Restart: keyboard R, gamepad Start/Options (button 9). Space is also a
+    // valid restart but is handled by GameOverOverlay's window listener so it
+    // doesn't double-fire mid-jump on revive.
+    const restartHeld = this.k('restart1') || btn(pad, BTN.START);
 
     this.set('left', leftHeld);
     this.set('right', rightHeld);
@@ -115,6 +120,7 @@ export class InputController {
     this.set('dash', dashHeld);
     this.set('attack', attackHeld);
     this.set('debugToggle', debugHeld);
+    this.set('restart', restartHeld);
   }
 
   held(name: ActionName): boolean {

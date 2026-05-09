@@ -93,11 +93,12 @@ export class GamepadDebug {
       lines.push('— Browser must have focused this tab since pad connected.');
     } else {
       lines.push('');
-      lines.push('expected mapping (Phaser standard):');
-      lines.push('  jump   = btn 0  (✕ Cross)        OR ↑/D-pad');
-      lines.push('  attack = btn 2 (□ Square)  OR btn 1 (○ Circle)');
-      lines.push('  dash   = btn 7 (R2)        OR btn 5 (R1)');
-      lines.push('  move   = axes 0/1 (left stick)   OR D-pad btns 12-15');
+      lines.push('action mapping:');
+      lines.push('  jump    = btn 0 (✕ Cross)');
+      lines.push('  attack  = btn 2 (□ Square)  OR btn 3 (△ Triangle)');
+      lines.push('  dash    = btn 4/5/6/7 (L1/R1/L2/R2)');
+      lines.push('  restart = btn 9 (Start/Options)   on game over');
+      lines.push('  move    = axis 0 (left stick)     OR D-pad 14/15');
       lines.push('');
       lines.push('press G to hide this panel');
     }

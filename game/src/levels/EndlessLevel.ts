@@ -19,6 +19,16 @@ interface Chunk {
   rects: Phaser.GameObjects.Rectangle[];
 }
 
+export interface EnemySpawn {
+  /** World X (center of body). */
+  x: number;
+  /** World Y (center of body). Will sit on the ground. */
+  y: number;
+  /** Patrol horizontal bounds — enemy reverses at these. */
+  xMin: number;
+  xMax: number;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -27,6 +37,12 @@ export interface EndlessLevelHandle {
   ensureGenerated: (playerX: number) => void;
   /** Distance the player has progressed from spawn, in pixels. */
   distance: (playerX: number) => number;
+  /** Returns and clears any enemy spawns buffered since the last call. */
+  drainEnemySpawns: () => EnemySpawn[];
+}
+
+export interface EndlessLevelOptions {
+  seed?: number;
 }
 
 export class EndlessLevel {
@@ -35,14 +51,15 @@ export class EndlessLevel {
   private chunks = new Map<number, Chunk>();
   private rng: () => number;
   private maxGenerated = -1;
+  private pendingSpawns: EnemySpawn[] = [];
 
   readonly spawnX = 120;
   readonly spawnY = 540;
 
-  constructor(scene: Phaser.Scene, seed?: number) {
+  constructor(scene: Phaser.Scene, options: EndlessLevelOptions = {}) {
     this.scene = scene;
     this.staticGroup = scene.physics.add.staticGroup();
-    this.rng = mulberry32(seed ?? (Math.random() * 1e9) | 0);
+    this.rng = mulberry32(options.seed ?? (Math.random() * 1e9) | 0);
 
     // Background fill — covers the whole visible canvas; scrolls with camera-fixed depth.
     scene.add.rectangle(VIEW.width / 2, VIEW.height / 2, VIEW.width, VIEW.height, COLORS.background)
@@ -60,6 +77,11 @@ export class EndlessLevel {
       spawnY: this.spawnY,
       ensureGenerated: (playerX: number) => this.ensureGenerated(playerX),
       distance: (playerX: number) => Math.max(0, playerX - this.spawnX),
+      drainEnemySpawns: () => {
+        const out = this.pendingSpawns;
+        this.pendingSpawns = [];
+        return out;
+      },
     };
   }
 
@@ -98,6 +120,43 @@ export class EndlessLevel {
 
     this.chunks.set(index, { index, rects });
     if (index > this.maxGenerated) this.maxGenerated = index;
+
+    // After the chunk's geometry is in place, decide if we should spawn an enemy on it.
+    // First two chunks are enemy-free (player needs space to read the controls + first pits).
+    // Spawns are buffered; GameScene.update drains them once construction is complete.
+    if (index >= 2) {
+      const enemy = this.pickEnemySpawn(segments, index);
+      if (enemy) this.pendingSpawns.push(enemy);
+    }
+  }
+
+  /**
+   * Return an enemy spawn for this chunk, or null if rolled out. Picks a wide-enough
+   * ground segment (≥ 180 px) and patrols within its bounds with a 24px ledge buffer.
+   *
+   * Spawn rate ramps with chunk index: a couple chunks of solo platforming up front,
+   * then ~35-65% chance afterwards.
+   */
+  private pickEnemySpawn(segments: Segment[], index: number): EnemySpawn | null {
+    const difficulty = Math.min(index / 14, 1);
+    const chance = 0.30 + difficulty * 0.35;
+    if (this.rng() > chance) return null;
+
+    // Find ground segments wide enough to patrol on. Skip platforms/walls.
+    const candidates = segments.filter((s) => s.kind === 'ground' && s.w >= 180);
+    if (candidates.length === 0) return null;
+
+    const pick = candidates[Math.floor(this.rng() * candidates.length)];
+    const buffer = 24;
+    const xMin = pick.x + buffer;
+    const xMax = pick.x + pick.w - buffer;
+    const groundTop = pick.y;
+    return {
+      x: (xMin + xMax) / 2,
+      y: groundTop - 36, // body half-height; sits on ground
+      xMin,
+      xMax,
+    };
   }
 
   /**
