@@ -187,14 +187,30 @@ export class GameScene extends Phaser.Scene {
       this.gamepadDebug.toggle();
     });
 
-    window.addEventListener('gamepadconnected', (e) => {
+    // Window-level event listeners — kept on instance so SHUTDOWN can
+    // remove them. Without that, every scene.restart() leaks a new copy
+    // and the listener stack can interact badly with Phaser plugin shutdown.
+    const onGamepadConnected = (e: Event) => {
       // eslint-disable-next-line no-console
       console.log('[gamepad] connected:', (e as GamepadEvent).gamepad.id);
-    });
+    };
+    window.addEventListener('gamepadconnected', onGamepadConnected);
 
-    // Clear ALL pending timers on scene shutdown so they don't fire against
-    // a destroyed scene (or, in the nuclear timer's case, blow up the next
-    // scene with a spurious page reload).
+    // Last-line-of-defense: if any uncaught error fires while we're in
+    // the ended state, the most likely cause is a Phaser plugin shutdown
+    // throwing during scene teardown. Schedule an immediate page reload —
+    // we know the scene-manager is corrupted and can't restart cleanly.
+    const onWindowError = (event: ErrorEvent) => {
+      if (!this.ended) return;
+      // eslint-disable-next-line no-console
+      console.warn('[GameScene] window error during ended state, reloading page:', event.message);
+      try { window.location.reload(); } catch { /* nothing left */ }
+    };
+    window.addEventListener('error', onWindowError);
+
+    // Clear ALL pending timers + window listeners on scene shutdown so
+    // they don't fire against a destroyed scene (or, in the nuclear
+    // timer's case, blow up the next scene with a spurious page reload).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.autoRestartTimerId !== null) {
         window.clearTimeout(this.autoRestartTimerId);
@@ -204,6 +220,8 @@ export class GameScene extends Phaser.Scene {
         window.clearTimeout(this.nuclearReloadTimerId);
         this.nuclearReloadTimerId = null;
       }
+      window.removeEventListener('gamepadconnected', onGamepadConnected);
+      window.removeEventListener('error', onWindowError);
     });
   }
 
@@ -327,27 +345,26 @@ export class GameScene extends Phaser.Scene {
     this.ended = true;
     this.endedAtWall = Date.now();
     // eslint-disable-next-line no-console
-    console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; auto-restart at +3500ms (with backups)`);
+    console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; arming restart timers FIRST`);
 
-    // Force-restore physics timeScale in case a hit pause was still active
-    // when we transitioned. Otherwise the death scene plays out in slow-mo
-    // and the game-over flash/overlay don't read clearly.
-    this.physics.world.timeScale = 1;
-
-    // Multi-timer auto-restart: redundant scheduling so a single thrown
-    // callback can't strand the player. The flag check inside performAuto-
-    // Restart() makes the extras idempotent.
-    this.scheduleAutoRestart(3500); // primary
-    this.scheduleAutoRestart(5500); // backup if primary callback threw
-    this.scheduleAutoRestart(7500); // second backup
-
-    // NUCLEAR last-resort: if the scene is still in the ended state at +9.5 s,
-    // hard-reload the page. Crucially does NOT check autoRestartFired —
-    // its whole purpose is to recover from cases where an earlier layer
-    // claimed success (autoRestartFired = true) but scene.restart() actually
-    // stalled (Phaser scene-manager corruption, asset re-load hang, partial
-    // create() throw). The timer is cleared on SHUTDOWN so a successful
-    // restart of the next scene won't accidentally trigger a page reload.
+    // ───────────────────────────────────────────────────────────────
+    // ARM RESTART TIMERS *FIRST*, BEFORE ANY OTHER LINE.
+    //
+    // window.setTimeout is the most reliable thing in the browser. If
+    // anything below this block throws — a Phaser plugin shutdown
+    // dropping a `removeAllListeners` on undefined, an audio-system
+    // hiccup, a tween that errors, ANYTHING — these timers are still
+    // armed and will eventually restart the scene OR reload the page.
+    //
+    // The Chrome devtools dump from a real stuck game-over showed an
+    // exception thrown from Phaser's internal stopListeners chain
+    // (KeyboardPlugin/GamepadPlugin) BEFORE endRun() got past its first
+    // few statements, leaving the player stranded. Moving timer setup
+    // to the top of the function makes that scenario recoverable.
+    // ───────────────────────────────────────────────────────────────
+    this.scheduleAutoRestart(3500);
+    this.scheduleAutoRestart(5500);
+    this.scheduleAutoRestart(7500);
     this.nuclearReloadTimerId = window.setTimeout(() => {
       if (this.ended) {
         // eslint-disable-next-line no-console
@@ -355,61 +372,51 @@ export class GameScene extends Phaser.Scene {
         try { window.location.reload(); } catch { /* truly nothing left */ }
       }
     }, 9500);
-
-    // Schedule auto-restart via window.setTimeout. Fires from the browser's
-    // main event loop, independent of Phaser's rAF / scene-time clocks. This
-    // is what catches the "tab is backgrounded" / "game loop throttled" cases
-    // where the frame-based elapsed-time check in update() can't fire fast
-    // enough because update() itself isn't running.
+    // Single-purpose primary timer (separate from scheduleAutoRestart
+    // for legibility — same effect, different log line).
     this.autoRestartTimerId = window.setTimeout(() => {
-      if (!this.autoRestartFired && this.ended) {
-        // eslint-disable-next-line no-console
-        console.log('[GameScene] auto-restart firing (window.setTimeout fallback)');
-        this.autoRestartFired = true;
-        this.audio.play(SFX.UI_RESTART);
-        this.scene.restart();
-      }
+      if (this.ended && !this.autoRestartFired) this.performRestart('setTimeout-fallback@3500ms');
     }, 3500);
 
-    const dist = this.level.distance(this.player.sprite.x);
-    if (dist > this.bestDistance) {
-      this.bestDistance = dist;
-      this.game.registry.set('bestDistance', dist);
-      this.bestDistanceText.setText(this.formatBestDistance());
-    }
-    let beatBest = false;
-    if (this.score > this.bestScore) {
-      this.bestScore = this.score;
-      this.game.registry.set('bestScore', this.score);
-      this.bestScoreText.setText(this.formatBestScore());
-      beatBest = true;
-    }
-    this.audio.stopMusic();
-    this.audio.play(kind === 'gameOver' ? SFX.UI_GAME_OVER : SFX.UI_BEST_SCORE);
-    if (beatBest && kind === 'gameOver') {
-      // Layer the celebratory cue over the loss tone.
-      this.time.delayedCall(700, () => this.audio.play(SFX.UI_BEST_SCORE));
-    }
-    this.cameras.main.flash(180, 255, 60, 90, false);
-    // Reflect death in the HP bar IMMEDIATELY — the bar sits in the
-    // !ended branch of update() so without this it'd freeze at the last
-    // pre-death value (was confusing players: bar still green while
-    // they're already dead).
-    this.hpBar.set(this.player.hp, this.player.maxHp);
+    // ───────────────────────────────────────────────────────────────
+    // Everything below MAY throw. Wrap in try/catch so a sub-system
+    // crash can't disarm the timers we just scheduled.
+    // ───────────────────────────────────────────────────────────────
+    try {
+      // Force-restore physics timeScale in case a hit pause was still active.
+      this.physics.world.timeScale = 1;
 
-    // Show the overlay SYNCHRONOUSLY. We used to delay 420ms to let the
-    // camera flash play first, but any delay is a window where the player
-    // sees a "stuck mid-air with no death screen" state and reasonably
-    // assumes the game is broken. Better: overlay appears with the flash.
-    this.showEndOverlay(kind);
+      // Stat bookkeeping.
+      const dist = this.level.distance(this.player.sprite.x);
+      if (dist > this.bestDistance) {
+        this.bestDistance = dist;
+        this.game.registry.set('bestDistance', dist);
+        this.bestDistanceText.setText(this.formatBestDistance());
+      }
+      let beatBest = false;
+      if (this.score > this.bestScore) {
+        this.bestScore = this.score;
+        this.game.registry.set('bestScore', this.score);
+        this.bestScoreText.setText(this.formatBestScore());
+        beatBest = true;
+      }
 
-    // Belt-and-suspenders: if for any reason the overlay didn't actually
-    // render (scene-state weirdness, error swallowed somewhere), retry at
-    // 1500ms and 2800ms. Idempotent — show() short-circuits if already
-    // visible.
-    window.setTimeout(() => this.showEndOverlay(kind), 1500);
-    window.setTimeout(() => this.showEndOverlay(kind), 2800);
-    // Auto-restart at 3500ms is scheduled above + frame-checked in update().
+      try { this.audio.stopMusic(); } catch (e) { console.warn('[GameScene] audio.stopMusic threw:', e); }
+      try { this.audio.play(kind === 'gameOver' ? SFX.UI_GAME_OVER : SFX.UI_BEST_SCORE); } catch (e) { console.warn(e); }
+      if (beatBest && kind === 'gameOver') {
+        try { this.time.delayedCall(700, () => { try { this.audio.play(SFX.UI_BEST_SCORE); } catch {} }); } catch {}
+      }
+
+      try { this.cameras.main.flash(180, 255, 60, 90, false); } catch (e) { console.warn(e); }
+      try { this.hpBar.set(this.player.hp, this.player.maxHp); } catch (e) { console.warn(e); }
+      try { this.showEndOverlay(kind); } catch (e) { console.warn('[GameScene] showEndOverlay threw:', e); }
+
+      window.setTimeout(() => { try { this.showEndOverlay(kind); } catch {} }, 1500);
+      window.setTimeout(() => { try { this.showEndOverlay(kind); } catch {} }, 2800);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[GameScene] endRun body threw — restart timers are still armed:', e);
+    }
   }
 
   private showEndOverlay(kind: 'gameOver' | 'win'): void {
