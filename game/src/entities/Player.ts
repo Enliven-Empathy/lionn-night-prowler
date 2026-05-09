@@ -289,19 +289,19 @@ export class Player {
     this.wasCrouching = crouching;
 
     const floorY = this.body.y + this.body.height;
+    const newH = crouching ? PLAYER.crouchHeight : PLAYER.height;
 
-    if (crouching) {
-      const h = PLAYER.crouchHeight;
-      this.sprite.setScale(1, h / PLAYER.height);
-      this.sprite.y = floorY - h / 2;
-      this.body.setSize(PLAYER.width, h);
-      this.body.setOffset(0, 0);
-    } else {
-      this.sprite.setScale(1, 1);
-      this.sprite.y = floorY - PLAYER.height / 2;
-      this.body.setSize(PLAYER.width, PLAYER.height);
-      this.body.setOffset(0, 0);
-    }
+    this.sprite.setScale(1, newH / PLAYER.height);
+    this.sprite.y = floorY - newH / 2;
+    this.body.setSize(PLAYER.width, newH);
+    this.body.setOffset(0, 0);
+    // Defensive: pin body.y so the foot stays at floorY even before the
+    // next physics preUpdate re-syncs from sprite. Without this, any code
+    // that reads body.y between scene.update and physics step (e.g. the
+    // patrol hazard probe iterating on the same tick) would see a body
+    // briefly recentered by setSize's center=true semantic. Sync will
+    // confirm the same value next tick; this is purely belt-and-braces.
+    this.body.y = floorY - newH;
   }
 
   /**

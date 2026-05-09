@@ -9,7 +9,8 @@ interface ActionState {
 }
 
 const STICK_DEADZONE = 0.28;     // a hair generous: many DualSense pads rest with ~0.05–0.15 offsets via BT
-const TRIGGER_THRESHOLD = 0.25;  // L2/R2 are analog; treat as pressed past this
+// L2/R2 are analog. The crouch mapping uses a hysteresis pair (ENTER/EXIT)
+// inline below rather than a single threshold — see InputController.update.
 
 // Button indices for Standard Gamepad mapping (W3C). Same on Xbox/PS/Generic
 // when navigator reports `mapping: "standard"`.
@@ -37,6 +38,13 @@ export class InputController {
   private keys: Partial<Record<string, Phaser.Input.Keyboard.Key>> = {};
   private scene: Phaser.Scene;
   private now = 0;
+  /** Hysteresis latch for the R2/L2 analog → crouch mapping. Without
+   *  this, a single-frame dip in trigger.value across the 0.25 threshold
+   *  toggles the crouch action mid-hold, which propagates into per-frame
+   *  body resizes and a visible "rapid expand/collapse" of the player
+   *  rectangle. Enter at 0.35, exit at 0.15 — wide gap so trigger drift
+   *  can't oscillate the latched state. */
+  private crouchTriggerLatched = false;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -97,17 +105,25 @@ export class InputController {
       btn(pad, BTN.R1) ||
       btn(pad, BTN.L1);
 
-    // Crouch: R2/L2 triggers OR keyboard down (DOWN/S) OR D-pad down. Keeping
-    // the down-axis as a fallback means kids on keyboard-only still have a
-    // discoverable crouch even though the gamepad now uses triggers. The
-    // analog triggers are thresholded so a slight resting pressure doesn't
-    // spam-toggle the body resize.
+    // Crouch: R2/L2 triggers (with hysteresis) OR keyboard down (DOWN/S)
+    // OR D-pad down. Two enter/exit thresholds rather than a single
+    // deadzone — DualSense over BT in particular reports trigger.value
+    // with several-frame dips even while the user is fully holding the
+    // trigger, and a single-threshold check turns those dips into
+    // crouch-action chatter. With ENTER=0.35 and EXIT=0.15, the latched
+    // state survives a value drop down to 0.15 before exiting, which is
+    // well below any "I'm still pressing" reading.
     const r2 = analog(pad, BTN.R2);
     const l2 = analog(pad, BTN.L2);
-    const crouchHeld =
-      r2 > TRIGGER_THRESHOLD ||
-      l2 > TRIGGER_THRESHOLD ||
-      downHeld;
+    const triggerVal = Math.max(r2, l2);
+    const ENTER = 0.35;
+    const EXIT = 0.15;
+    if (this.crouchTriggerLatched) {
+      if (triggerVal < EXIT) this.crouchTriggerLatched = false;
+    } else {
+      if (triggerVal > ENTER) this.crouchTriggerLatched = true;
+    }
+    const crouchHeld = this.crouchTriggerLatched || downHeld;
 
     // Attack: Square (primary). Triangle as alt. Circle DELIBERATELY excluded —
     // some BT-paired DualSense controllers report Circle pressed at idle.
