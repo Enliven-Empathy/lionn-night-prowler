@@ -5,7 +5,9 @@ import { Player } from '../entities/Player';
 import { Patrol } from '../entities/Patrol';
 import { Collectible } from '../entities/Collectible';
 import { Heart } from '../entities/Heart';
+import { Spikes } from '../entities/Spikes';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
+import { SPIKES } from '../core/constants';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
 import { GameOverOverlay } from '../ui/GameOverOverlay';
@@ -24,6 +26,7 @@ export class GameScene extends Phaser.Scene {
   private patrols: Patrol[] = [];
   private collectibles: Collectible[] = [];
   private hearts: Heart[] = [];
+  private spikes: Spikes[] = [];
   private staticGroupRef!: Phaser.Physics.Arcade.StaticGroup;
   private level!: EndlessLevelHandle;
   private debugOverlay!: DebugOverlay;
@@ -85,6 +88,7 @@ export class GameScene extends Phaser.Scene {
     this.patrols = [];
     this.collectibles = [];
     this.hearts = [];
+    this.spikes = [];
     this.score = 0;
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
@@ -270,11 +274,12 @@ export class GameScene extends Phaser.Scene {
       this.player.update(timeMs, dtSec, this.controls);
 
       // Lazy-generate the next chunks ahead of the player, then materialize any
-      // enemy / collectible / heart spawn requests those chunks emitted.
+      // enemy / collectible / heart / spike spawn requests those chunks emitted.
       this.level.ensureGenerated(this.player.sprite.x);
       this.drainEnemySpawns();
       this.drainCollectibleSpawns();
       this.drainHeartSpawns();
+      this.drainSpikeSpawns();
 
       // Tick patrols. They need the player's position to chase/attack.
       const target = {
@@ -301,10 +306,30 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      // Cull patrols / collectibles / hearts that fell off the world or are far behind.
+      // Tick spikes + damage check. Spike phase advances by dtMs; if the
+      // spike is currently dangerous AND overlaps the player, deal damage.
+      // Player's invuln frames make this safe against rapid re-hits.
+      for (const s of this.spikes) {
+        const dangerous = s.update(dtMs);
+        if (dangerous && Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, s.hitRect())) {
+          this.player.takeDamage({
+            damage: SPIKES.damage,
+            fromX: s.worldX,
+            fromY: s.worldY,
+            knockbackX: SPIKES.knockbackX,
+            knockbackY: SPIKES.knockbackY,
+            hitstopMs: SPIKES.hitstopMs,
+            attackName: 'spikes',
+            team: 'enemy',
+          }, timeMs);
+        }
+      }
+
+      // Cull patrols / collectibles / hearts / spikes that are far behind.
       this.cullPatrols();
       this.cullCollectibles();
       this.cullHearts();
+      this.cullSpikes();
 
       const dist = this.level.distance(this.player.sprite.x);
       this.distanceText.setText(`${(dist / 100).toFixed(1)} m`);
@@ -500,6 +525,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private drainSpikeSpawns(): void {
+    for (const s of this.level.drainSpikeSpawns()) {
+      this.spikes.push(new Spikes(this, s.x, s.y, s.width, s.phaseOffsetMs));
+    }
+  }
+
   private collectHeart(h: Heart): void {
     h.collect();
     const before = this.player.hp;
@@ -607,6 +638,17 @@ export class GameScene extends Phaser.Scene {
       if (h.collected || h.container.x < cullX) {
         if (!h.collected) h.destroy();
         this.hearts.splice(i, 1);
+      }
+    }
+  }
+
+  private cullSpikes(): void {
+    const cullX = this.player.sprite.x - 1500;
+    for (let i = this.spikes.length - 1; i >= 0; i--) {
+      const s = this.spikes[i];
+      if (s.worldX < cullX) {
+        s.destroy();
+        this.spikes.splice(i, 1);
       }
     }
   }

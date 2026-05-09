@@ -66,6 +66,28 @@ export const COMBAT = {
   attackBufferMs: 110,
 } as const;
 
+export const SPIKES = {
+  /** Damage per touch when spikes are extended. Player has 700ms invuln after,
+   *  so repeated bounces won't multi-tap-kill. */
+  damage: 4,
+  knockbackX: 0,
+  knockbackY: -360,
+  hitstopMs: 90,
+  /** Visible width / height in px. Width is approximate (rounded to spike count). */
+  defaultWidth: 130,
+  spikeHeight: 18,
+} as const;
+
+export const WALL_TOWER = {
+  wallW: 22,
+  wallH: 320,
+  /** Distance between the two walls' inner faces. Tuned to be narrow enough
+   *  that wall-jump arc reaches the opposite wall reliably. */
+  wallGapPx: 78,
+  /** Tier-3 reward Y offset above wall top. */
+  rewardYOffset: 36,
+} as const;
+
 export const ENEMY = {
   cutter: {
     width: 56,

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, PLAYER, VIEW } from '../core/constants';
+import { COLORS, PLAYER, SPIKES, VIEW, WALL_TOWER } from '../core/constants';
 
 const CHUNK_WIDTH = 640;
 const GROUND_TOP_Y = 640;
@@ -54,6 +54,17 @@ export interface HeartSpawn {
   y: number;
 }
 
+export interface SpikeSpawn {
+  /** Center X of the spike row. */
+  x: number;
+  /** Y of the *ground top* the spikes emerge from. */
+  y: number;
+  /** Total width of the spike row in pixels. */
+  width: number;
+  /** Phase offset in ms (0..3160) so spikes in the same chunk don't all open in lockstep. */
+  phaseOffsetMs: number;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -68,6 +79,8 @@ export interface EndlessLevelHandle {
   drainCollectibleSpawns: () => CollectibleSpawn[];
   /** Returns and clears any heart (HP) spawns buffered since the last call. */
   drainHeartSpawns: () => HeartSpawn[];
+  /** Returns and clears any spike-trap spawns buffered since the last call. */
+  drainSpikeSpawns: () => SpikeSpawn[];
 }
 
 export interface EndlessLevelOptions {
@@ -83,6 +96,10 @@ export class EndlessLevel {
   private pendingSpawns: EnemySpawn[] = [];
   private pendingCollectibles: CollectibleSpawn[] = [];
   private pendingHearts: HeartSpawn[] = [];
+  private pendingSpikes: SpikeSpawn[] = [];
+  /** Set during generateChunk if the chunk's layout already pre-populated
+   *  collectibles (e.g. wall-tower) and the generic scatter pass should skip. */
+  private skipScatterForCurrentChunk = false;
 
   readonly spawnX = 120;
   readonly spawnY = 540;
@@ -123,6 +140,11 @@ export class EndlessLevel {
         this.pendingHearts = [];
         return out;
       },
+      drainSpikeSpawns: () => {
+        const out = this.pendingSpikes;
+        this.pendingSpikes = [];
+        return out;
+      },
     };
   }
 
@@ -138,10 +160,20 @@ export class EndlessLevel {
     const x0 = index * CHUNK_WIDTH;
     const rects: Phaser.GameObjects.Rectangle[] = [];
 
-    const segments: Segment[] =
-      index === 0
-        ? this.layoutSpawnChunk(x0)
-        : this.layoutProceduralChunk(x0, index);
+    this.skipScatterForCurrentChunk = false;
+
+    let segments: Segment[];
+    let isWallTower = false;
+
+    if (index === 0) {
+      segments = this.layoutSpawnChunk(x0);
+    } else if (this.shouldSpawnWallTower(index)) {
+      segments = this.layoutWallTowerChunk(x0);
+      isWallTower = true;
+      this.skipScatterForCurrentChunk = true;
+    } else {
+      segments = this.layoutProceduralChunk(x0, index);
+    }
 
     for (const seg of segments) {
       const fill =
@@ -162,27 +194,116 @@ export class EndlessLevel {
     this.chunks.set(index, { index, rects });
     if (index > this.maxGenerated) this.maxGenerated = index;
 
+    // Wall-tower chunks: hand-place the +8 crystal at the top center.
+    // No enemies, no platforms, no spikes — keep it focused on the climb.
+    if (isWallTower) {
+      const towerCenterX = x0 + CHUNK_WIDTH / 2;
+      const wallTopY = GROUND_TOP_Y - WALL_TOWER.wallH;
+      this.pendingCollectibles.push({
+        x: towerCenterX,
+        y: wallTopY - WALL_TOWER.rewardYOffset,
+        tier: 3,
+      });
+      return;
+    }
+
     // After the chunk's geometry is in place, decide if we should spawn an enemy on it.
-    // First two chunks are enemy-free (player needs space to read the controls + first pits).
-    // Spawns are buffered; GameScene.update drains them once construction is complete.
     if (index >= 2) {
       const enemy = this.pickEnemySpawn(segments, index);
       if (enemy) this.pendingSpawns.push(enemy);
     }
 
-    // Collectibles: every chunk past the spawn one. Placement is tier-driven:
-    //   tier 1 trails along the player's run line on each ground segment
-    //   tier 2 floats over pits or above platforms — needs a jump
-    //   tier 3 hovers high above any wall — needs wall-cling + wall-jump
-    if (index >= 1) {
+    // Collectibles: scatter pass (tier 1/2/3 by segment shape).
+    if (index >= 1 && !this.skipScatterForCurrentChunk) {
       this.scatterCollectibles(segments, index);
     }
 
-    // Hearts: rare HP pickups. Skip the first few chunks so the player
-    // doesn't see one before they've taken any damage.
+    // Hearts: rare HP pickups, never on the very first chunks.
     if (index >= 3) {
       this.maybeSpawnHeart(segments);
     }
+
+    // Spikes: cyclic ground hazards. Past chunk 4, ~30% chance per chunk
+    // when there's a wide enough ground segment. Player needs to time
+    // their dash/jump to cross safely.
+    if (index >= 4) {
+      this.maybeSpawnSpikes(segments);
+    }
+  }
+
+  private shouldSpawnWallTower(index: number): boolean {
+    if (index < 6) return false;
+    return this.rng() < 0.18;
+  }
+
+  /**
+   * Whole-chunk layout: continuous ground beneath, two tall parallel walls
+   * close enough together to wall-jump between, +8 crystal at the top.
+   * Generates no other obstacles in this chunk so the climb stays focused.
+   */
+  private layoutWallTowerChunk(x0: number): Segment[] {
+    const segs: Segment[] = [];
+
+    // Continuous ground for the full chunk width — safe approach + landing.
+    segs.push({
+      x: x0,
+      y: GROUND_TOP_Y,
+      w: CHUNK_WIDTH,
+      h: GROUND_HEIGHT,
+      kind: 'ground',
+    });
+
+    const towerCenterX = x0 + CHUNK_WIDTH / 2;
+    const wallTopY = GROUND_TOP_Y - WALL_TOWER.wallH;
+    const innerHalfGap = WALL_TOWER.wallGapPx / 2;
+
+    // Left wall: inner face at towerCenterX - innerHalfGap
+    segs.push({
+      x: towerCenterX - innerHalfGap - WALL_TOWER.wallW,
+      y: wallTopY,
+      w: WALL_TOWER.wallW,
+      h: WALL_TOWER.wallH,
+      kind: 'wall',
+    });
+    // Right wall: inner face at towerCenterX + innerHalfGap
+    segs.push({
+      x: towerCenterX + innerHalfGap,
+      y: wallTopY,
+      w: WALL_TOWER.wallW,
+      h: WALL_TOWER.wallH,
+      kind: 'wall',
+    });
+
+    return segs;
+  }
+
+  /**
+   * 30% chance per eligible chunk to add a row of cyclic spikes on a
+   * sufficiently wide ground segment. Skips ground that is too narrow
+   * (player needs landing space on each side).
+   */
+  private maybeSpawnSpikes(segments: Segment[]): void {
+    if (this.rng() >= 0.30) return;
+    const grounds = segments
+      .filter((s) => s.kind === 'ground' && s.w >= 280)
+      .sort((a, b) => a.x - b.x);
+    if (grounds.length === 0) return;
+    const pick = grounds[Math.floor(this.rng() * grounds.length)];
+
+    // Spike row: width ≤ ground width minus 80px landing buffer on each side.
+    const maxRowW = Math.min(SPIKES.defaultWidth, pick.w - 160);
+    if (maxRowW < 60) return;
+    const rowW = Math.max(60, maxRowW);
+    const rowCenterX = pick.x + pick.w / 2;
+    const totalCycle = 1200 + 280 + 1400 + 280; // 3160 ms
+    const phaseOffsetMs = this.rng() * totalCycle;
+
+    this.pendingSpikes.push({
+      x: rowCenterX,
+      y: pick.y,
+      width: rowW,
+      phaseOffsetMs,
+    });
   }
 
   /**
