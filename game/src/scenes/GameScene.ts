@@ -71,6 +71,12 @@ export class GameScene extends Phaser.Scene {
   private nuclearReloadTimerId: number | null = null;
   private restartWasHeld = false;
   private restartArmedAt = 0;
+  /** Cached M key for the in-game "back to mode picker" shortcut. Cached
+   *  in create(); update() reads .isDown only — calling kb.addKey every
+   *  frame piles up listeners and feeds the scene-shutdown crash that
+   *  hit ModeSelectScene. */
+  private modeBackKey: Phaser.Input.Keyboard.Key | null = null;
+  private modeBackPrev = false;
 
   // Grab/throw state.
   //
@@ -138,6 +144,12 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBoundsCollision(true, true, true, false);
 
     this.controls = new InputController(this);
+
+    // Cache the M key once. Reading isDown is cheap; addKey is not safe
+    // to call per-frame (see ModeSelectScene comment).
+    const kb = this.input.keyboard;
+    this.modeBackKey = kb ? kb.addKey(Phaser.Input.Keyboard.KeyCodes.M) : null;
+    this.modeBackPrev = !!this.modeBackKey?.isDown;
     this.damage = new DamageSystem();
     this.fx = new HitFx(this);
     this.audio = new AudioManager(this);
@@ -321,14 +333,15 @@ export class GameScene extends Phaser.Scene {
       this.debugLastToggleAt = timeMs;
     }
 
-    // M to bail back to the mode picker. Lets the kid switch between
-    // ENDLESS and PARKOUR without refreshing the page. Guarded with the
-    // same 250 ms throttle as the debug toggle so a held key doesn't
-    // re-fire across frames.
-    const kb = this.input.keyboard;
-    if (kb && kb.checkDown(kb.addKey('M'), 250)) {
-      this.scene.start('ModeSelectScene');
-      return;
+    // M to bail back to the mode picker. Rising-edge tracked so a held
+    // key only fires once. Cached key — see modeBackKey field comment.
+    if (this.modeBackKey) {
+      const down = this.modeBackKey.isDown;
+      if (down && !this.modeBackPrev) {
+        this.scene.start('ModeSelectScene');
+        return;
+      }
+      this.modeBackPrev = down;
     }
 
     // FX update ALWAYS runs — even after ended — so a hit-pause that froze
