@@ -285,28 +285,17 @@ export class GameScene extends Phaser.Scene {
       if (this.restartArmedAt === 0) this.restartArmedAt = timeMs + 250;
       const armed = timeMs >= this.restartArmedAt;
       if (armed && heldNow && !this.restartWasHeld) {
-        if (this.autoRestartTimerId !== null) {
-          window.clearTimeout(this.autoRestartTimerId);
-          this.autoRestartTimerId = null;
-        }
-        this.audio.play(SFX.UI_RESTART);
-        this.scene.restart();
+        this.performRestart('manual-button-press');
         return;
       }
       this.restartWasHeld = heldNow;
 
-      // Frame-based auto-restart using WALL-CLOCK (Date.now), not scene time.
-      // Phaser's scene/game clock can pause when the tab is backgrounded or
-      // canvas loses focus — using wall-clock means this check always reflects
-      // real elapsed time. The window.setTimeout in endRun() is the primary
-      // mechanism; this is belt-and-suspenders for when both fire on the same
-      // frame.
+      // Frame-based auto-restart using WALL-CLOCK (Date.now). Belt-and-
+      // suspenders for the window.setTimeout-based timers — fires on the
+      // first frame of update() where elapsed wall-time has crossed the
+      // 3500ms threshold.
       if (!this.autoRestartFired && Date.now() - this.endedAtWall > 3500) {
-        // eslint-disable-next-line no-console
-        console.log(`[GameScene] auto-restart firing (frame check, elapsed ${Date.now() - this.endedAtWall}ms)`);
-        this.autoRestartFired = true;
-        this.audio.play(SFX.UI_RESTART);
-        this.scene.restart();
+        this.performRestart(`frame-check@${Date.now() - this.endedAtWall}ms`);
         return;
       }
     }
@@ -324,12 +313,30 @@ export class GameScene extends Phaser.Scene {
     this.ended = true;
     this.endedAtWall = Date.now();
     // eslint-disable-next-line no-console
-    console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; auto-restart in 3500ms`);
+    console.log(`[GameScene] endRun (${kind}) at wall=${this.endedAtWall}; auto-restart at +3500ms (with backups)`);
 
     // Force-restore physics timeScale in case a hit pause was still active
     // when we transitioned. Otherwise the death scene plays out in slow-mo
     // and the game-over flash/overlay don't read clearly.
     this.physics.world.timeScale = 1;
+
+    // Multi-timer auto-restart: redundant scheduling so a single thrown
+    // callback can't strand the player. The flag check inside performAuto-
+    // Restart() makes the extras idempotent.
+    this.scheduleAutoRestart(3500); // primary
+    this.scheduleAutoRestart(5500); // backup if primary callback threw
+    this.scheduleAutoRestart(7500); // second backup
+
+    // NUCLEAR last-resort: if auto-restart somehow hasn't fired by 9.5 s,
+    // hard-reload the entire page. A page reload can't get stuck the way
+    // an in-engine state machine can.
+    window.setTimeout(() => {
+      if (this.ended && !this.autoRestartFired) {
+        // eslint-disable-next-line no-console
+        console.warn('[GameScene] auto-restart didn\'t fire in 9.5s — reloading page');
+        try { window.location.reload(); } catch { /* truly nothing left */ }
+      }
+    }, 9500);
 
     // Schedule auto-restart via window.setTimeout. Fires from the browser's
     // main event loop, independent of Phaser's rAF / scene-time clocks. This
@@ -393,13 +400,51 @@ export class GameScene extends Phaser.Scene {
     // eslint-disable-next-line no-console
     console.log('[GameScene] showEndOverlay firing');
     this.endOverlay.show(kind, () => {
-      if (this.autoRestartTimerId !== null) {
-        window.clearTimeout(this.autoRestartTimerId);
-        this.autoRestartTimerId = null;
-      }
-      this.audio.play(SFX.UI_RESTART);
-      this.scene.restart();
+      this.performRestart('manual-overlay-click');
     });
+  }
+
+  /**
+   * Schedule one auto-restart attempt at `delayMs`. Idempotent — if a
+   * previous attempt already fired (autoRestartFired=true) or if the run
+   * is no longer ended, this one no-ops.
+   */
+  private scheduleAutoRestart(delayMs: number): void {
+    window.setTimeout(() => {
+      if (!this.ended || this.autoRestartFired) return;
+      this.performRestart(`auto-restart@${delayMs}ms`);
+    }, delayMs);
+  }
+
+  /**
+   * Single chokepoint for actually restarting the scene. Wraps both
+   * audio + scene.restart in try/catch so an exception in one can't
+   * abort the other. autoRestartFired is set FIRST to prevent multiple
+   * concurrent restarts (race between setTimeout + frame check).
+   */
+  private performRestart(reason: string): void {
+    if (this.autoRestartFired) return;
+    this.autoRestartFired = true;
+    // eslint-disable-next-line no-console
+    console.log(`[GameScene] performRestart (${reason})`);
+
+    if (this.autoRestartTimerId !== null) {
+      window.clearTimeout(this.autoRestartTimerId);
+      this.autoRestartTimerId = null;
+    }
+    try {
+      this.audio.play(SFX.UI_RESTART);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[GameScene] audio.play(UI_RESTART) failed:', e);
+    }
+    try {
+      this.scene.restart();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[GameScene] scene.restart() failed — falling back to page reload:', e);
+      try { window.location.reload(); } catch { /* nothing left */ }
+    }
   }
 
   private formatBestDistance(): string {
