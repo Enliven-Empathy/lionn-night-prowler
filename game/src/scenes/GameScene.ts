@@ -3,6 +3,7 @@ import { VIEW } from '../core/constants';
 import { InputController } from '../core/input';
 import { Player } from '../entities/Player';
 import { Patrol } from '../entities/Patrol';
+import { Collectible } from '../entities/Collectible';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
@@ -17,6 +18,7 @@ export class GameScene extends Phaser.Scene {
   private controls!: InputController;
   private player!: Player;
   private patrols: Patrol[] = [];
+  private collectibles: Collectible[] = [];
   private staticGroupRef!: Phaser.Physics.Arcade.StaticGroup;
   private level!: EndlessLevelHandle;
   private debugOverlay!: DebugOverlay;
@@ -33,6 +35,11 @@ export class GameScene extends Phaser.Scene {
   private bestDistance = 0;
   private bestDistanceText!: Phaser.GameObjects.Text;
 
+  private score = 0;
+  private bestScore = 0;
+  private scoreText!: Phaser.GameObjects.Text;
+  private bestScoreText!: Phaser.GameObjects.Text;
+
   constructor() {
     super('GameScene');
   }
@@ -40,6 +47,7 @@ export class GameScene extends Phaser.Scene {
   init(): void {
     // Carry across restarts via the registry (Phaser's persistent kv store).
     this.bestDistance = this.game.registry.get('bestDistance') ?? 0;
+    this.bestScore = this.game.registry.get('bestScore') ?? 0;
   }
 
   create(): void {
@@ -47,6 +55,8 @@ export class GameScene extends Phaser.Scene {
     this.debugLastToggleAt = -Infinity;
     this.debugHitboxes = false;
     this.patrols = [];
+    this.collectibles = [];
+    this.score = 0;
 
     this.physics.world.setBounds(0, -300, WORLD_WIDTH, WORLD_HEIGHT + 300);
     this.physics.world.setBoundsCollision(true, true, true, false);
@@ -87,7 +97,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.distanceText.setOrigin(0.5, 0).setScrollFactor(0).setDepth(1100);
 
-    this.bestDistanceText = this.add.text(VIEW.width / 2, 56, this.formatBest(), {
+    this.bestDistanceText = this.add.text(VIEW.width / 2, 56, this.formatBestDistance(), {
       fontFamily: 'Cinzel, Georgia, serif',
       fontSize: '14px',
       color: '#9b59ff',
@@ -95,6 +105,24 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 3,
     });
     this.bestDistanceText.setOrigin(0.5, 0).setScrollFactor(0).setDepth(1100);
+
+    this.scoreText = this.add.text(VIEW.width - 24, 18, '★ 0', {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: '28px',
+      color: '#ffe999',
+      stroke: '#0b0816',
+      strokeThickness: 4,
+    });
+    this.scoreText.setOrigin(1, 0).setScrollFactor(0).setDepth(1100);
+
+    this.bestScoreText = this.add.text(VIEW.width - 24, 52, this.formatBestScore(), {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: '14px',
+      color: '#9b59ff',
+      stroke: '#0b0816',
+      strokeThickness: 3,
+    });
+    this.bestScoreText.setOrigin(1, 0).setScrollFactor(0).setDepth(1100);
 
     this.input.keyboard?.on('keydown-H', () => {
       this.debugHitboxes = !this.debugHitboxes;
@@ -124,9 +152,10 @@ export class GameScene extends Phaser.Scene {
       this.fx.update(timeMs);
 
       // Lazy-generate the next chunks ahead of the player, then materialize any
-      // enemy spawn requests those chunks emitted.
+      // enemy and collectible spawn requests those chunks emitted.
       this.level.ensureGenerated(this.player.sprite.x);
       this.drainEnemySpawns();
+      this.drainCollectibleSpawns();
 
       // Tick patrols. They need the player's position to chase/attack.
       const target = {
@@ -136,8 +165,18 @@ export class GameScene extends Phaser.Scene {
       };
       for (const p of this.patrols) p.update(timeMs, dtSec, target);
 
-      // Cull patrols that fell off the world (into a pit) or that are far behind.
+      // Tick collectibles (bob/pulse) + check pickup overlap with player.
+      const playerHurt = this.player.hurtbox();
+      for (const c of this.collectibles) {
+        c.update(timeMs);
+        if (!c.collected && Phaser.Geom.Intersects.RectangleToRectangle(playerHurt, c.hitRect())) {
+          this.collectPickup(c);
+        }
+      }
+
+      // Cull patrols + collectibles that fell off the world or are far behind.
       this.cullPatrols();
+      this.cullCollectibles();
 
       // Pit death.
       if (this.player.sprite.y > this.deathY && !this.player.isDead()) {
@@ -172,7 +211,12 @@ export class GameScene extends Phaser.Scene {
     if (dist > this.bestDistance) {
       this.bestDistance = dist;
       this.game.registry.set('bestDistance', dist);
-      this.bestDistanceText.setText(this.formatBest());
+      this.bestDistanceText.setText(this.formatBestDistance());
+    }
+    if (this.score > this.bestScore) {
+      this.bestScore = this.score;
+      this.game.registry.set('bestScore', this.score);
+      this.bestScoreText.setText(this.formatBestScore());
     }
     this.cameras.main.flash(180, 255, 60, 90, false);
     this.time.delayedCall(420, () => {
@@ -180,8 +224,12 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private formatBest(): string {
+  private formatBestDistance(): string {
     return `best  ${(this.bestDistance / 100).toFixed(1)} m`;
+  }
+
+  private formatBestScore(): string {
+    return `best  ★ ${this.bestScore}`;
   }
 
   private drainEnemySpawns(): void {
@@ -190,6 +238,45 @@ export class GameScene extends Phaser.Scene {
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
     }
+  }
+
+  private drainCollectibleSpawns(): void {
+    for (const s of this.level.drainCollectibleSpawns()) {
+      this.collectibles.push(new Collectible(this, s.x, s.y, s.tier));
+    }
+  }
+
+  private collectPickup(c: Collectible): void {
+    c.collect();
+    this.score += c.value;
+    this.scoreText.setText(`★ ${this.score}`);
+
+    // Brief score punch.
+    this.scoreText.setScale(1.25);
+    this.tweens.add({
+      targets: this.scoreText,
+      scale: 1,
+      duration: 220,
+      ease: 'Back.easeOut',
+    });
+
+    // Floating "+N" popup at the pickup point.
+    const popup = this.add.text(c.container.x, c.container.y - 8, `+${c.value}`, {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: c.tier === 3 ? '28px' : c.tier === 2 ? '22px' : '18px',
+      color: c.tier === 3 ? '#9be8ff' : c.tier === 2 ? '#d4baff' : '#ffe999',
+      stroke: '#0b0816',
+      strokeThickness: 4,
+    });
+    popup.setOrigin(0.5, 0.5).setDepth(1200);
+    this.tweens.add({
+      targets: popup,
+      y: popup.y - 36,
+      alpha: 0,
+      duration: 700,
+      ease: 'Quad.easeOut',
+      onComplete: () => popup.destroy(),
+    });
   }
 
   private cullPatrols(): void {
@@ -201,6 +288,17 @@ export class GameScene extends Phaser.Scene {
       if (fellOff || farBehind) {
         p.destroy();
         this.patrols.splice(i, 1);
+      }
+    }
+  }
+
+  private cullCollectibles(): void {
+    const cullX = this.player.sprite.x - 1500;
+    for (let i = this.collectibles.length - 1; i >= 0; i--) {
+      const c = this.collectibles[i];
+      if (c.collected || c.container.x < cullX) {
+        if (!c.collected) c.destroy();
+        this.collectibles.splice(i, 1);
       }
     }
   }

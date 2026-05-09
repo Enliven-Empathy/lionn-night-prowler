@@ -8,6 +8,7 @@ import { DamageSystem } from '../combat/DamageSystem';
 import { Combatant, DamageEvent } from '../combat/types';
 import { ATTACKS, getAttack } from '../combat/attacks';
 import { HitFx } from '../fx/HitFx';
+import { AttackFx } from '../fx/AttackFx';
 
 export class Player {
   readonly sprite: Phaser.GameObjects.Rectangle;
@@ -25,6 +26,8 @@ export class Player {
 
   private damage: DamageSystem;
   private fx: HitFx;
+  private attackFx: AttackFx;
+  private cancelLunge: (() => void) | null = null;
   private hurtRectCache = new Phaser.Geom.Rectangle();
 
   /** Most recent hit-point world coords from a hitbox we landed. Used to spawn slash FX. */
@@ -50,6 +53,7 @@ export class Player {
     this.hitbox = new Hitbox(scene, 'player');
     this.damage = damage;
     this.fx = fx;
+    this.attackFx = new AttackFx(scene);
     this.hp = PLAYER.maxHp;
 
     this.combatant = damage.register({
@@ -75,13 +79,15 @@ export class Player {
   update(timeMs: number, dtSec: number, input: InputController): void {
     // Evolve attack state from time. Emit phase events.
     const events = this.attack.update(timeMs);
+    const facing = this.movement.getFacing();
     for (const e of events) {
       if (e.kind === 'activeStart') {
         this.hitbox.activate(e.attack);
+        this.attackFx.slash(this.sprite.x, this.sprite.y, facing, e.attack, 'player');
       } else if (e.kind === 'activeEnd') {
         this.hitbox.deactivate();
       } else if (e.kind === 'recoveryEnd') {
-        // Combo window starts ticking from here. AttackState tracks it.
+        this.cancelLunge = null; // tween chain has resolved on its own
       }
     }
 
@@ -175,6 +181,11 @@ export class Player {
 
   private startAttack(attack: typeof ATTACKS[string], timeMs: number): void {
     this.attack.start(attack, timeMs);
+    // Cancel any in-progress lunge (chained combo case) and start a fresh one.
+    this.cancelLunge?.();
+    const facing = this.movement.getFacing();
+    this.attackFx.telegraph(this.sprite, attack.startupMs, 'player');
+    this.cancelLunge = this.attackFx.lunge(this.sprite, attack, facing);
   }
 
   takeDamage(event: DamageEvent, timeMs: number): void {
@@ -183,6 +194,8 @@ export class Player {
     this.movement.takeHurt(timeMs, event.fromX);
     this.attack.cancel();
     this.hitbox.deactivate();
+    this.cancelLunge?.();
+    this.cancelLunge = null;
     this.fx.hitPause(event.hitstopMs, timeMs);
     this.fx.shake(160, 0.012);
     if (this.hp === 0) {

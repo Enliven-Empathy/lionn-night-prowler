@@ -5,6 +5,7 @@ import { ATTACKS } from '../combat/attacks';
 import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { HitFx } from '../fx/HitFx';
+import { AttackFx } from '../fx/AttackFx';
 
 const SIZE = { w: 46, h: 70 };
 const FILL_PATROL = 0x3a2a55;
@@ -51,6 +52,8 @@ export class Patrol {
 
   private damage: DamageSystem;
   private fx: HitFx;
+  private attackFx: AttackFx;
+  private cancelLunge: (() => void) | null = null;
   private hurtRect = new Phaser.Geom.Rectangle();
 
   /**
@@ -82,6 +85,7 @@ export class Patrol {
     this.xMax = xMax;
     this.damage = damage;
     this.fx = fx;
+    this.attackFx = new AttackFx(scene);
 
     this.combatant = damage.register({
       team: 'enemy',
@@ -146,6 +150,9 @@ export class Patrol {
         // Lunge. Use the player's claw_2 stats — feels like a real combat exchange.
         const a = ATTACKS.claw_2;
         this.attack.start(a, timeMs);
+        this.cancelLunge?.();
+        this.attackFx.telegraph(this.sprite, a.startupMs, 'enemy');
+        this.cancelLunge = this.attackFx.lunge(this.sprite, a, this.facing);
         this.aiState = 'attack';
         this.body.setVelocityX(this.facing * 60); // slight forward drift
       } else {
@@ -171,8 +178,12 @@ export class Patrol {
   private maybeUpdateAttack(timeMs: number): void {
     const events = this.attack.update(timeMs);
     for (const e of events) {
-      if (e.kind === 'activeStart') this.hitbox.activate(e.attack);
-      else if (e.kind === 'activeEnd') this.hitbox.deactivate();
+      if (e.kind === 'activeStart') {
+        this.hitbox.activate(e.attack);
+        this.attackFx.slash(this.sprite.x, this.sprite.y, this.facing, e.attack, 'enemy');
+      } else if (e.kind === 'activeEnd') {
+        this.hitbox.deactivate();
+      }
     }
     if (this.hitbox.active) {
       this.hitbox.setOrigin(this.sprite.x, this.sprite.y, this.facing);
@@ -188,6 +199,8 @@ export class Patrol {
     this.hurtUntil = timeMs + 220;
     this.attack.cancel();
     this.hitbox.deactivate();
+    this.cancelLunge?.();
+    this.cancelLunge = null;
 
     const dir = this.body.center.x < event.fromX ? -1 : 1;
     this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST);

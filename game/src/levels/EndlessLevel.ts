@@ -29,6 +29,12 @@ export interface EnemySpawn {
   xMax: number;
 }
 
+export interface CollectibleSpawn {
+  x: number;
+  y: number;
+  tier: 1 | 2 | 3;
+}
+
 export interface EndlessLevelHandle {
   staticGroup: Phaser.Physics.Arcade.StaticGroup;
   spawnX: number;
@@ -39,6 +45,8 @@ export interface EndlessLevelHandle {
   distance: (playerX: number) => number;
   /** Returns and clears any enemy spawns buffered since the last call. */
   drainEnemySpawns: () => EnemySpawn[];
+  /** Returns and clears any collectible spawns buffered since the last call. */
+  drainCollectibleSpawns: () => CollectibleSpawn[];
 }
 
 export interface EndlessLevelOptions {
@@ -52,6 +60,7 @@ export class EndlessLevel {
   private rng: () => number;
   private maxGenerated = -1;
   private pendingSpawns: EnemySpawn[] = [];
+  private pendingCollectibles: CollectibleSpawn[] = [];
 
   readonly spawnX = 120;
   readonly spawnY = 540;
@@ -80,6 +89,11 @@ export class EndlessLevel {
       drainEnemySpawns: () => {
         const out = this.pendingSpawns;
         this.pendingSpawns = [];
+        return out;
+      },
+      drainCollectibleSpawns: () => {
+        const out = this.pendingCollectibles;
+        this.pendingCollectibles = [];
         return out;
       },
     };
@@ -127,6 +141,78 @@ export class EndlessLevel {
     if (index >= 2) {
       const enemy = this.pickEnemySpawn(segments, index);
       if (enemy) this.pendingSpawns.push(enemy);
+    }
+
+    // Collectibles: every chunk past the spawn one. Placement is tier-driven:
+    //   tier 1 trails along the player's run line on each ground segment
+    //   tier 2 floats over pits or above platforms — needs a jump
+    //   tier 3 hovers high above any wall — needs wall-cling + wall-jump
+    if (index >= 1) {
+      this.scatterCollectibles(segments, index);
+    }
+  }
+
+  /**
+   * Place collectibles into a chunk by reading its segments. Placement rules:
+   *
+   *   tier 1 (gold) — for every ground segment ≥ 200px, drop 1-2 coins along
+   *     the run path (just above ground top). Cheap to grab, fills score early.
+   *
+   *   tier 2 (violet) — over each pit (between this ground and the next), float
+   *     a gem. Also occasional gem above a floating platform. Requires a jump.
+   *
+   *   tier 3 (cyan) — only spawns when the chunk has a wall segment. Placed
+   *     above the wall's top, just out of reach unless you cling and jump.
+   */
+  private scatterCollectibles(segments: Segment[], _index: number): void {
+    const grounds = segments.filter((s) => s.kind === 'ground');
+    const platforms = segments.filter((s) => s.kind === 'platform');
+    const walls = segments.filter((s) => s.kind === 'wall');
+
+    // Tier 1 along ground segments.
+    for (const g of grounds) {
+      if (g.w < 200) continue;
+      const count = g.w > 320 ? 2 : 1;
+      const pad = 50;
+      for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0.5 : (i + 1) / (count + 1);
+        const x = g.x + pad + (g.w - pad * 2) * t;
+        const y = g.y - 28;
+        this.pendingCollectibles.push({ x, y, tier: 1 });
+      }
+    }
+
+    // Tier 2 over pits. Find pit centers between consecutive grounds.
+    const sortedGrounds = [...grounds].sort((a, b) => a.x - b.x);
+    for (let i = 0; i < sortedGrounds.length - 1; i++) {
+      const left = sortedGrounds[i];
+      const right = sortedGrounds[i + 1];
+      const leftEdge = left.x + left.w;
+      const rightEdge = right.x;
+      const pitWidth = rightEdge - leftEdge;
+      if (pitWidth < 80) continue;
+      // Sometimes spawn (75% chance per pit).
+      if (this.rng() < 0.75) {
+        const x = leftEdge + pitWidth / 2;
+        const y = left.y - 70 - this.rng() * 50; // 70-120 px above ground top
+        this.pendingCollectibles.push({ x, y, tier: 2 });
+      }
+    }
+
+    // Tier 2 sometimes above a platform (alternate route).
+    for (const p of platforms) {
+      if (this.rng() < 0.5) {
+        this.pendingCollectibles.push({ x: p.x + p.w / 2, y: p.y - 28, tier: 2 });
+      }
+    }
+
+    // Tier 3 above walls — only when a wall actually exists in this chunk.
+    for (const w of walls) {
+      this.pendingCollectibles.push({
+        x: w.x + w.w / 2,
+        y: w.y - 22, // just above the top of the wall column
+        tier: 3,
+      });
     }
   }
 
