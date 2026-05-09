@@ -256,30 +256,33 @@ export class Player {
 
   /**
    * Resize the physics body AND the visual sprite when crouch state
-   * changes. Both anchor to the floor: body.bottom and visual-rect bottom
+   * changes. Both anchor to the floor: body.bottom and visual bottom
    * share the same world Y across the transition.
    *
-   * The earlier version anchored only the body (via offset), and used
-   * sprite.setScale(1, 0.55) — but Phaser's scale keeps the sprite
-   * CENTERED on sprite.y. So the visual shrunk while its center stayed
-   * put, leaving the visual feet floating ~14 px above the actual body
-   * bottom. That looked broken on screen and was the symptom behind
-   * "crouch doesn't function".
+   * Phaser's Body sync formula (used in pre/postUpdate) is:
    *
-   * Fix: snapshot floorY = body.bottom BEFORE resize, then:
-   *   1. Apply scale (changes displayHeight only).
-   *   2. Move sprite.y so visual bottom lands on floorY.
-   *   3. Resize the body and pick body.offset.y so the sync formula
-   *      (body.y = sprite.y - originY*sprite.height + offset.y) yields
-   *      body.y = floorY - newHeight, i.e. body.bottom = floorY.
+   *     body.y    = sprite.y - sprite.scaleY * sprite.displayOriginY + offset.y
+   *     sprite.y  = body.y   - offset.y + sprite.scaleY * sprite.displayOriginY
    *
-   * sprite.height is the *unscaled* dimension and stays at PLAYER.height
-   * across the transition — only displayHeight changes via scale. That
-   * makes the offset math simple: 32 - h/2 for crouch, 0 for standing.
+   * The KEY is that the formula uses *scaled* `scaleY * displayOriginY`,
+   * not the unscaled sprite.height — so when scaleY changes (which is
+   * exactly what crouch does), the half-height term in both directions
+   * automatically tracks displayHeight. With body.height set to the
+   * scaled height too, offset = 0 satisfies both directions and lands
+   * body.bottom == sprite display bottom. No correction needed.
    *
-   * Sprite.y can be safely written here because crouch only fires while
-   * grounded (body at rest); next physics tick re-syncs body from the
-   * new sprite.y + offset and confirms body.bottom == floorY.
+   * Earlier versions of this method picked a non-zero offset (28 in the
+   * original; 14 in my first fix attempt), which caused the body to
+   * compute as 14 px below ground at preUpdate, get push-corrected by
+   * the collider, and then *postUpdate* wrote sprite.y back using the
+   * corrected body — yanking the visual 14 px upward every frame. That
+   * was the rapid "collapse/expand" symptom on R2 taps: one frame the
+   * sprite landed at the correct crouch position, the next physics tick
+   * snapped it back to the standing center.
+   *
+   * Crouch only fires while grounded (PlayerMovement gates on grounded),
+   * so writing sprite.y here is safe — body is at rest and the next
+   * pre/postUpdate cycle confirms the new resting position.
    */
   private applyCrouchResize(crouching: boolean): void {
     if (crouching === this.wasCrouching) return;
@@ -289,11 +292,10 @@ export class Player {
 
     if (crouching) {
       const h = PLAYER.crouchHeight;
-      const scaleY = h / PLAYER.height;
-      this.sprite.setScale(1, scaleY);
+      this.sprite.setScale(1, h / PLAYER.height);
       this.sprite.y = floorY - h / 2;
       this.body.setSize(PLAYER.width, h);
-      this.body.setOffset(0, PLAYER.height / 2 - h / 2);
+      this.body.setOffset(0, 0);
     } else {
       this.sprite.setScale(1, 1);
       this.sprite.y = floorY - PLAYER.height / 2;
