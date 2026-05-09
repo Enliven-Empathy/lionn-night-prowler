@@ -8,6 +8,9 @@ import { Heart } from '../entities/Heart';
 import { Spikes } from '../entities/Spikes';
 import { Overhang } from '../entities/Overhang';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
+import { ParkourLevel } from '../levels/ParkourLevel';
+
+type GameMode = 'endless' | 'parkour';
 import { OVERHANG, SPIKES } from '../core/constants';
 import { DebugOverlay } from '../ui/DebugOverlay';
 import { GamepadDebug } from '../ui/GamepadDebug';
@@ -31,6 +34,11 @@ export class GameScene extends Phaser.Scene {
   private overhangs: Overhang[] = [];
   private staticGroupRef!: Phaser.Physics.Arcade.StaticGroup;
   private level!: EndlessLevelHandle;
+  /** Active game mode. Read from game.registry on init() so the value
+   *  survives scene restarts. ModeSelectScene writes it; GameScene reads
+   *  and branches level construction. Default is 'endless' so existing
+   *  flow is preserved if no mode was picked. */
+  private mode: GameMode = 'endless';
   private debugOverlay!: DebugOverlay;
   private gamepadDebug!: GamepadDebug;
   private endOverlay!: GameOverOverlay;
@@ -97,6 +105,8 @@ export class GameScene extends Phaser.Scene {
     // Carry across restarts via the registry (Phaser's persistent kv store).
     this.bestDistance = this.game.registry.get('bestDistance') ?? 0;
     this.bestScore = this.game.registry.get('bestScore') ?? 0;
+    const storedMode = this.game.registry.get('mode');
+    this.mode = storedMode === 'parkour' ? 'parkour' : 'endless';
   }
 
   create(): void {
@@ -140,7 +150,12 @@ export class GameScene extends Phaser.Scene {
       this.audio.play(attackHitSfx(event.attackName));
     });
 
-    this.level = new EndlessLevel(this).build();
+    // Mode-driven level construction. Parkour and Endless both expose
+    // EndlessLevelHandle so the rest of the scene is identical — only
+    // the level builder differs. Endless code path is unchanged.
+    this.level = this.mode === 'parkour'
+      ? new ParkourLevel(this).build()
+      : new EndlessLevel(this).build();
     this.staticGroupRef = this.level.staticGroup;
 
     this.player = new Player(
@@ -170,6 +185,18 @@ export class GameScene extends Phaser.Scene {
     this.gamepadDebug = new GamepadDebug(this);
     this.hpBar = new HealthBar(this, 24, 96);
     this.hpBar.set(this.player.hp, this.player.maxHp);
+
+    // Mode badge (top-left, above HP). Tells the kid which mode they're
+    // in at a glance and reminds them of the M-to-switch shortcut.
+    const modeLabel = this.mode === 'parkour' ? 'PARKOUR' : 'ENDLESS';
+    const modeColor = this.mode === 'parkour' ? '#b47bff' : '#c4b8e8';
+    this.add.text(24, 64, `${modeLabel}  ·  M to switch`, {
+      fontFamily: 'Cinzel, Georgia, serif',
+      fontSize: '14px',
+      color: modeColor,
+      stroke: '#0b0816',
+      strokeThickness: 3,
+    }).setScrollFactor(0).setDepth(1100);
 
     // Controls hint — appears on spawn, fades out after 6s. Doesn't pollute
     // the screen the rest of the run. Re-shown each scene.restart so the
@@ -292,6 +319,16 @@ export class GameScene extends Phaser.Scene {
     if (this.controls.held('debugToggle') && timeMs - this.debugLastToggleAt > 250) {
       this.debugOverlay.toggle();
       this.debugLastToggleAt = timeMs;
+    }
+
+    // M to bail back to the mode picker. Lets the kid switch between
+    // ENDLESS and PARKOUR without refreshing the page. Guarded with the
+    // same 250 ms throttle as the debug toggle so a held key doesn't
+    // re-fire across frames.
+    const kb = this.input.keyboard;
+    if (kb && kb.checkDown(kb.addKey('M'), 250)) {
+      this.scene.start('ModeSelectScene');
+      return;
     }
 
     // FX update ALWAYS runs — even after ended — so a hit-pause that froze

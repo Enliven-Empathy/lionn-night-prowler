@@ -38,7 +38,11 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     this.registerLionnAnims();
-    this.scene.start('GameScene');
+    // Show the mode picker once at startup. After the kid picks, the
+    // selection lives in game.registry; subsequent scene.restart loops
+    // (auto-restart on death etc) re-enter GameScene directly without
+    // re-prompting. To switch modes, press M during gameplay.
+    this.scene.start('ModeSelectScene');
   }
 
   private registerLionnAnims(): void {
