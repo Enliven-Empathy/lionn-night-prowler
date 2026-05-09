@@ -14,3 +14,6 @@ tools/sprite-extract/.cache/
 # Generated sprite output is not committed — regenerate from configs
 game/public/assets/sprites/**/*.png
 game/public/assets/sprites/**/*.json
+
+# GH Pages deploy staging — created/destroyed by deploy-gh-pages.sh
+.deploy-staging/

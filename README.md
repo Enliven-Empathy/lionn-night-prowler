@@ -45,25 +45,33 @@ Week 4 — Perception layer
   GATE: do testers say "I want to play more" without prompting?
 ```
 
-## Play the game (no Claude needed)
+## Play the game
+
+**Public URL** — works on any device, no install required:
+
+> **https://alex-enliven.github.io/lionn-night-prowler/**
+
+GitHub Pages serves the production build directly. Open it on a phone,
+tablet, laptop — anywhere. Bookmark it.
+
+### Updating the public URL after code changes
 
 ```bash
 cd /Users/alextavassoli/2026_Claude_Code_Enliven/lionn-night-prowler
+./deploy-gh-pages.sh
+```
+
+This rebuilds `dist/`, force-pushes it to the `gh-pages` branch, and
+GitHub Pages re-publishes within ~30 s.
+
+### Local play (alternative — needs python3 on macOS)
+
+```bash
 ./play-lionn.sh
 ```
 
-The script:
-1. Rebuilds the production bundle if `src/` is newer than `dist/`.
-2. Frees port 5180 if anything stale is using it.
-3. Serves `game/dist/` with `python3 -m http.server` (no Node needed
-   at runtime, no Vite, no Claude session).
-4. Opens `http://localhost:5180/` in your browser.
-
-Stop it with `Ctrl+C` in that terminal.
-
-The game is a static build — once `dist/` exists you can also serve it
-yourself with any static-file tool, or zip and share `dist/` with
-someone else.
+Rebuilds dist if stale, serves it from a local Python http.server on
+`http://localhost:5180/`. Stop with `Ctrl+C`.
 
 ## Run the dev server (for source iteration)
 
