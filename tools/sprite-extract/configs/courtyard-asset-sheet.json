@@ -1,0 +1,16 @@
+{
+  "_comment": "Courtyard sheet (1536x1024) is laid out as a 2-row 3-col grid of panels under a header bar. Top: A.Gameplay Tiles, B.Props, C.Interactive. Bottom: D.Foreground Silhouettes, E.Fog/Smoke, F.Small FX. For the v1 showcase we only need section D as a backdrop. Bg removal disabled — these are textures, not characters.",
+  "input": "../../../art/raw/sheets/courtyard-asset-sheet.png",
+  "outputDir": "../../../game/public/assets/backgrounds/courtyard",
+  "defaultAnchor": "center",
+  "defaultFrameRate": 12,
+  "alphaThreshold": 4,
+  "padding": 0,
+  "bgRemoval": { "enabled": false },
+  "groups": [
+    { "name": "backdrop_silhouettes", "cells": [{ "x": 20, "y": 678, "w": 495, "h": 305 }] },
+    { "name": "fog_mist_strip",       "cells": [{ "x": 622, "y": 902, "w": 380, "h": 70 }] },
+    { "name": "wall_block",           "cells": [{ "x": 22, "y": 295, "w": 380, "h": 80 }] },
+    { "name": "platform_top",         "cells": [{ "x": 22, "y": 220, "w": 380, "h": 50 }] }
+  ]
+}

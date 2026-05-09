@@ -1,0 +1,16 @@
+{
+  "_comment": "Single-frame sanity test using the existing Eldorath book hero shot. Validates the pipeline end-to-end (bg removal → trim → anchor → atlas → preview) on a real Lionn render before the chibi 8-pose sheet exists. Image is 252x1024 portrait with forest background. One whole-image cell, one group, one frame.",
+  "input": "../samples/lionn-hero.png",
+  "outputDir": "../../../game/public/assets/sprites/lionn-hero-test",
+  "defaultAnchor": "foot",
+  "defaultFrameRate": 12,
+  "alphaThreshold": 24,
+  "padding": 8,
+  "bgRemoval": { "enabled": true, "model": "medium" },
+  "groups": [
+    {
+      "name": "hero",
+      "cells": [{ "x": 0, "y": 0, "w": 252, "h": 1024 }]
+    }
+  ]
+}

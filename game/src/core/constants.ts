@@ -23,7 +23,44 @@ export const PLAYER = {
   dashDurationMs: 140,
   dashCooldownMs: 550,
 
+  // Double jump: one extra mid-air jump, recharges on ground/wall-jump.
+  airJumps: 1,
+  doubleJumpVelocity: -520,
+
   maxFallSpeed: 1400,
+
+  // Wall cling: stick to a wall while pressing toward it in the air.
+  wallSlideSpeed: 110,
+  wallJumpVelocityX: 360,
+  wallJumpVelocityY: -540,
+  wallJumpLockoutMs: 180,
+
+  maxHp: 6,
+  hurtKnockback: { x: 220, y: -260 },
+  hurtInvulnMs: 700,
+} as const;
+
+export const COMBAT = {
+  hitPauseMs: 70,
+  hitPauseHeavyMs: 110,
+  comboResetMs: 360,
+  attackBufferMs: 110,
+} as const;
+
+export const ENEMY = {
+  cutter: {
+    width: 56,
+    height: 78,
+    runSpeed: 175,
+    chaseSpeed: 230,
+    dashSpeed: 720,
+    maxHp: 5,
+    detectRangeX: 360,
+    detectRangeY: 130,
+    attackRangeX: 70,
+    attackRangeY: 60,
+    knockbackResist: 0.6,
+  },
 } as const;
 
 export const COLORS = {

@@ -26,7 +26,16 @@ const config: Phaser.Types.Core.GameConfig = {
   input: {
     gamepad: true,
   },
+  // preserveDrawingBuffer lets external tooling read canvas pixels via
+  // drawImage / toDataURL. Tiny perf cost; only enabled in dev.
+  render: import.meta.env.DEV ? { preserveDrawingBuffer: true } : undefined,
   scene: [BootScene, PreloadScene, GameScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Dev-only inspection hook. Lets external tooling (preview eval, devtools)
+// reach into the running game without requiring a debug build flag.
+if (import.meta.env.DEV) {
+  (window as unknown as { __game: Phaser.Game }).__game = game;
+}

@@ -1,6 +1,6 @@
 {
-  "_comment": "Cell coordinates are in pixels of the source image. Tune by opening the sheet, reading pixel coords of each labeled cell, and updating x/y/w/h. The current values are placeholders for the 8-pose Lionn sheet (assumes a ~1456x1024 image with 2 rows of 4 cells under a header banner). Run with --noBgRemove first to verify cropping, then re-run without that flag.",
-  "input": "../samples/lionn-character-sheet.png",
+  "_comment": "Cells are in pixels of the 1448x1086 Lionn character sheet at art/raw/sheets/lionn-character-sheet.png. Layout: title + hero render up top (top ~40%), then 2 rows of 4 numbered cells. Row 1: idle/run/crouch/jump. Row 2: 3-frame claw combo / shadow dash / shadow pounce / wall cling. Crops are inset so the cell number badge and bottom label band are excluded.",
+  "input": "../../../art/raw/sheets/lionn-character-sheet.png",
   "outputDir": "../../../game/public/assets/sprites/lionn",
   "defaultAnchor": "foot",
   "defaultFrameRate": 12,
@@ -8,21 +8,22 @@
   "padding": 6,
   "bgRemoval": { "enabled": true, "model": "medium" },
   "groups": [
-    { "name": "idle",        "cells": [{ "x":   30, "y": 470, "w": 340, "h": 260 }] },
-    { "name": "run",         "cells": [{ "x":  370, "y": 470, "w": 340, "h": 260 }] },
-    { "name": "crouch",      "cells": [{ "x":  710, "y": 470, "w": 340, "h": 260 }] },
-    { "name": "jump",        "cells": [{ "x": 1050, "y": 470, "w": 340, "h": 260 }] },
+    { "name": "idle",   "cells": [{ "x":   25, "y": 450, "w": 340, "h": 260 }] },
+    { "name": "run",    "cells": [{ "x":  383, "y": 450, "w": 340, "h": 260 }] },
+    { "name": "crouch", "cells": [{ "x":  741, "y": 450, "w": 340, "h": 260 }] },
+    { "name": "jump",   "cells": [{ "x": 1099, "y": 450, "w": 340, "h": 260 }] },
     {
+      "_comment": "Cell 5 (Basic Claw Combo) is wider than cells 6/7/8 because it holds 3 sub-panels. The 3 panels span roughly x=25..495, so each is ~157 wide. Cells 6/7/8 are pushed right of x≈515.",
       "name": "claw_combo",
       "cells": [
-        { "x":  30, "y": 740, "w": 110, "h": 260 },
-        { "x": 145, "y": 740, "w": 110, "h": 260 },
-        { "x": 260, "y": 740, "w": 110, "h": 260 }
+        { "x":  30, "y": 760, "w": 155, "h": 260 },
+        { "x": 185, "y": 760, "w": 155, "h": 260 },
+        { "x": 340, "y": 760, "w": 155, "h": 260 }
       ],
       "frameRate": 14
     },
-    { "name": "shadow_dash",   "cells": [{ "x":  370, "y": 740, "w": 340, "h": 260 }], "frameRate": 18 },
-    { "name": "shadow_pounce", "cells": [{ "x":  710, "y": 740, "w": 340, "h": 260 }] },
-    { "name": "wall_cling",    "cells": [{ "x": 1050, "y": 740, "w": 340, "h": 260 }] }
+    { "name": "shadow_dash",   "cells": [{ "x":  545, "y": 778, "w": 245, "h": 220 }], "frameRate": 18 },
+    { "name": "shadow_pounce", "cells": [{ "x":  855, "y": 778, "w": 245, "h": 220 }] },
+    { "name": "wall_cling",    "cells": [{ "x": 1165, "y": 778, "w": 245, "h": 220 }] }
   ]
 }

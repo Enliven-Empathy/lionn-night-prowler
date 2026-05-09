@@ -21,16 +21,18 @@ export class DebugOverlay {
     this.text.setVisible(this.visible);
   }
 
-  update(snap: MovementSnapshot, fps: number): void {
+  update(snap: MovementSnapshot, fps: number, hp?: { current: number; max: number }): void {
     if (!this.visible) return;
+    const wallStr = snap.wallSide === -1 ? 'L' : snap.wallSide === 1 ? 'R' : '·';
     const lines = [
       `state ${snap.state.padEnd(10)} face ${snap.facing > 0 ? '>' : '<'}  fps ${fps.toFixed(0)}`,
-      `vx ${snap.vx.toFixed(0).padStart(5)}  vy ${snap.vy.toFixed(0).padStart(5)}  grounded ${snap.grounded ? 'Y' : 'N'}`,
+      `vx ${snap.vx.toFixed(0).padStart(5)}  vy ${snap.vy.toFixed(0).padStart(5)}  grounded ${snap.grounded ? 'Y' : 'N'}  wall ${wallStr}`,
       `coyote ${snap.coyoteRemainingMs.toFixed(0).padStart(4)}ms  buffer ${snap.jumpBufferRemainingMs.toFixed(0).padStart(4)}ms`,
-      `dash ${snap.dashing ? 'ACTIVE' : `cd ${snap.dashCooldownRemainingMs.toFixed(0)}ms`}`,
+      `dash ${snap.dashing ? 'ACTIVE' : `cd ${snap.dashCooldownRemainingMs.toFixed(0)}ms`}  ${snap.crouching ? 'CROUCH' : ''}${snap.hurt ? '  HURT' : ''}`,
+      hp ? `hp ${'#'.repeat(hp.current)}${'·'.repeat(hp.max - hp.current)}  (${hp.current}/${hp.max})` : '',
       ``,
-      `move: arrows / A,D    jump: space / W    dash: shift    F3: toggle`,
-    ];
+      `move: ←→/A,D  jump: space/W  dash: shift  attack: J  crouch: ↓/S  F3: debug`,
+    ].filter((l) => l !== null);
     this.text.setText(lines);
   }
 }

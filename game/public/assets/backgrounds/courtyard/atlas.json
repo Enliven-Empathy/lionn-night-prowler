@@ -1,0 +1,125 @@
+{
+  "frames": {
+    "backdrop_silhouettes_000": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 495,
+        "h": 305
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 495,
+        "h": 305
+      },
+      "sourceSize": {
+        "w": 495,
+        "h": 305
+      },
+      "anchor": {
+        "x": 248,
+        "y": 153
+      }
+    },
+    "fog_mist_strip_000": {
+      "frame": {
+        "x": 497,
+        "y": 0,
+        "w": 380,
+        "h": 70
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 380,
+        "h": 70
+      },
+      "sourceSize": {
+        "w": 380,
+        "h": 70
+      },
+      "anchor": {
+        "x": 190,
+        "y": 35
+      }
+    },
+    "wall_block_000": {
+      "frame": {
+        "x": 879,
+        "y": 0,
+        "w": 380,
+        "h": 80
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 380,
+        "h": 80
+      },
+      "sourceSize": {
+        "w": 380,
+        "h": 80
+      },
+      "anchor": {
+        "x": 190,
+        "y": 40
+      }
+    },
+    "platform_top_000": {
+      "frame": {
+        "x": 1261,
+        "y": 0,
+        "w": 380,
+        "h": 50
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 380,
+        "h": 50
+      },
+      "sourceSize": {
+        "w": 380,
+        "h": 50
+      },
+      "anchor": {
+        "x": 190,
+        "y": 25
+      }
+    }
+  },
+  "meta": {
+    "app": "lionn-sprite-extract",
+    "version": "0.0.1",
+    "image": "atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1643,
+      "h": 305
+    },
+    "scale": "1"
+  },
+  "animations": {
+    "backdrop_silhouettes": [
+      "backdrop_silhouettes_000"
+    ],
+    "fog_mist_strip": [
+      "fog_mist_strip_000"
+    ],
+    "wall_block": [
+      "wall_block_000"
+    ],
+    "platform_top": [
+      "platform_top_000"
+    ]
+  }
+}
