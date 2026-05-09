@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'attack' | 'debugToggle' | 'restart';
+export type ActionName = 'left' | 'right' | 'up' | 'down' | 'jump' | 'dash' | 'attack' | 'grab' | 'debugToggle' | 'restart';
 
 interface ActionState {
   held: boolean;
@@ -55,10 +55,11 @@ export class InputController {
     this.keys.jump1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keys.dash1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.keys.attack1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.J);
+    this.keys.grab1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.K);
     this.keys.debug1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.F3);
     this.keys.restart1 = kb.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'attack', 'debugToggle', 'restart'];
+    const allActions: ActionName[] = ['left', 'right', 'up', 'down', 'jump', 'dash', 'attack', 'grab', 'debugToggle', 'restart'];
     for (const name of allActions) {
       this.actions.set(name, { held: false, pressedAt: -Infinity, releasedAt: -Infinity });
     }
@@ -106,6 +107,12 @@ export class InputController {
       btn(pad, BTN.SQUARE_X) ||
       btn(pad, BTN.TRIANGLE_Y);
 
+    // Grab: Circle (○) or K. Idle-reported Circle is fine here because
+    // GameScene reads grab via justPressed (rising edge only) — a stuck
+    // "held" state can only register ONE grab attempt at scene start,
+    // not a continuous grab spam.
+    const grabHeld = this.k('grab1') || btn(pad, BTN.CIRCLE_B);
+
     const debugHeld = this.k('debug1');
     // Restart on game-over: keyboard R, plus a *generous* gamepad binding so
     // the kid can't miss it. Standard Start is button 9, but DualSense over
@@ -125,6 +132,7 @@ export class InputController {
     this.set('jump', jumpHeld);
     this.set('dash', dashHeld);
     this.set('attack', attackHeld);
+    this.set('grab', grabHeld);
     this.set('debugToggle', debugHeld);
     this.set('restart', restartHeld);
   }

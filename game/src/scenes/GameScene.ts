@@ -62,6 +62,15 @@ export class GameScene extends Phaser.Scene {
   private restartWasHeld = false;
   private restartArmedAt = 0;
 
+  // Grab/throw state
+  private grabbedEnemy: Patrol | null = null;
+  private grabbedAtMs = 0;
+  /** Snapshot of which directions were already held at the moment of grab.
+   *  Used so a continuously-held direction (e.g. you pressed Circle while
+   *  walking right) doesn't immediately count as a throw — the player has
+   *  to release and re-press to throw in that direction. */
+  private grabPressedDirs = { left: false, right: false, up: false };
+
   private distanceText!: Phaser.GameObjects.Text;
   private bestDistance = 0;
   private bestDistanceText!: Phaser.GameObjects.Text;
@@ -89,6 +98,9 @@ export class GameScene extends Phaser.Scene {
     this.collectibles = [];
     this.hearts = [];
     this.spikes = [];
+    this.grabbedEnemy = null;
+    this.grabbedAtMs = 0;
+    this.grabPressedDirs = { left: false, right: false, up: false };
     this.score = 0;
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
@@ -147,7 +159,7 @@ export class GameScene extends Phaser.Scene {
     const controlsHint = this.add.text(
       VIEW.width / 2,
       VIEW.height - 32,
-      'MOVE  ←→ / A·D     JUMP  Cross / SPACE  (×2 for double-jump)     ATTACK  □ Square / J     DASH  R1 / SHIFT',
+      'MOVE ←→ · JUMP Cross/SPACE (×2 double) · ATTACK □/J · DASH R1/SHIFT · GRAB ○/K then ←→↑ to throw',
       {
         fontFamily: 'Cinzel, Georgia, serif',
         fontSize: '14px',
@@ -307,6 +319,11 @@ export class GameScene extends Phaser.Scene {
       this.drainHeartSpawns();
       this.drainSpikeSpawns();
 
+      // Grab / throw orchestration runs BEFORE patrols update so the
+      // grabbed patrol's frozen position is set this frame.
+      this.handleGrabInput(timeMs);
+      this.maintainGrabbedFollowing();
+
       // Tick patrols. They need the player's position to chase/attack.
       const target = {
         x: this.player.sprite.x,
@@ -314,6 +331,16 @@ export class GameScene extends Phaser.Scene {
         alive: !this.player.isDead(),
       };
       for (const p of this.patrols) p.update(timeMs, dtSec, target);
+
+      // Thrown-patrol damage: any thrown patrol that overlaps another
+      // patrol deals damage. Quadratic in patrol count but the count is
+      // small (handful per chunk), so it's fine.
+      for (const thrower of this.patrols) {
+        if (!thrower.isThrown()) continue;
+        for (const target of this.patrols) {
+          thrower.damageIfThrownInto(target, timeMs);
+        }
+      }
 
       // Tick collectibles (bob/pulse) + check pickup overlap with player.
       const playerHurt = this.player.hurtbox();
@@ -555,6 +582,111 @@ export class GameScene extends Phaser.Scene {
     for (const s of this.level.drainSpikeSpawns()) {
       this.spikes.push(new Spikes(this, s.x, s.y, s.width, s.phaseOffsetMs));
     }
+  }
+
+  // ─── Grab / throw ──────────────────────────────────────────────────
+
+  /**
+   * Run once per update tick. Either initiates a grab (if Circle/K just
+   * pressed and nothing currently grabbed) or processes throw-direction
+   * input on the currently grabbed enemy.
+   */
+  private handleGrabInput(timeMs: number): void {
+    // Auto-release if grabbed enemy died from a hit (e.g. player attacks while
+    // an enemy is grabbed — currently shouldn't happen since attacks while
+    // grabbing are unusual, but keep the safety).
+    if (this.grabbedEnemy && !this.grabbedEnemy.isAlive()) {
+      this.grabbedEnemy = null;
+    }
+
+    // Try to grab.
+    if (!this.grabbedEnemy && this.controls.justPressed('grab', 16)) {
+      this.controls.consumePress('grab');
+      this.tryGrab(timeMs);
+      return;
+    }
+
+    if (!this.grabbedEnemy) return;
+
+    // Auto-break after 3 s.
+    if (timeMs - this.grabbedAtMs > 3000) {
+      this.grabbedEnemy.releaseGrab();
+      this.grabbedEnemy = null;
+      return;
+    }
+
+    // Throw on FRESH press of a direction. A direction that was held at
+    // the moment of grab doesn't count as a throw until released-then-
+    // pressed again, so walking-right + grab doesn't insta-throw right.
+    const leftNow = this.controls.held('left');
+    const rightNow = this.controls.held('right');
+    const upNow = this.controls.held('up');
+
+    let throwDir: 'left' | 'right' | 'up' | null = null;
+    if (leftNow && !this.grabPressedDirs.left) throwDir = 'left';
+    else if (rightNow && !this.grabPressedDirs.right) throwDir = 'right';
+    else if (upNow && !this.grabPressedDirs.up) throwDir = 'up';
+
+    // Refresh "was held" so a release re-arms that direction.
+    if (!leftNow) this.grabPressedDirs.left = false;
+    if (!rightNow) this.grabPressedDirs.right = false;
+    if (!upNow) this.grabPressedDirs.up = false;
+
+    if (throwDir) {
+      this.throwGrabbed(throwDir, timeMs);
+    }
+  }
+
+  /** Find the closest live patrol within range and grab it. */
+  private tryGrab(timeMs: number): void {
+    const px = this.player.sprite.x;
+    const py = this.player.sprite.y;
+    const rangeSq = 90 * 90;
+
+    let best: Patrol | null = null;
+    let bestD2 = rangeSq;
+    for (const p of this.patrols) {
+      if (!p.isAlive() || p.isGrabbed() || p.isThrown()) continue;
+      const dx = p.sprite.x - px;
+      const dy = p.sprite.y - py;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        best = p;
+        bestD2 = d2;
+      }
+    }
+    if (!best) return;
+
+    best.setGrabbed();
+    this.grabbedEnemy = best;
+    this.grabbedAtMs = timeMs;
+    this.grabPressedDirs = {
+      left: this.controls.held('left'),
+      right: this.controls.held('right'),
+      up: this.controls.held('up'),
+    };
+    this.audio.play(SFX.PLAYER_CLAW_2); // close-enough proxy SFX for grab
+  }
+
+  /** Position the grabbed enemy just above the player's head each frame. */
+  private maintainGrabbedFollowing(): void {
+    if (!this.grabbedEnemy) return;
+    const px = this.player.sprite.x;
+    const py = this.player.sprite.y - this.player.body.height / 2 - this.grabbedEnemy.body.height / 2 - 6;
+    this.grabbedEnemy.setGrabbedPosition(px, py);
+  }
+
+  private throwGrabbed(dir: 'left' | 'right' | 'up', timeMs: number): void {
+    if (!this.grabbedEnemy) return;
+    let vx = 0;
+    let vy = 0;
+    if (dir === 'left')       { vx = -700; vy = -200; }
+    else if (dir === 'right') { vx =  700; vy = -200; }
+    else                      { vx =    0; vy = -720; }
+    this.grabbedEnemy.throwMe(vx, vy, timeMs);
+    this.audio.play(SFX.PLAYER_SHADOW_POUNCE); // heavier launch SFX for throw
+    this.fx.shake(80, 0.005);
+    this.grabbedEnemy = null;
   }
 
   private collectHeart(h: Heart): void {

@@ -25,7 +25,10 @@ const PATROL_SPEED = 90;
 const CHASE_SPEED = 170;
 const KNOCKBACK_RESIST = 0.55;
 
-type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead';
+type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead' | 'grabbed' | 'thrown';
+
+const THROW_DURATION_MS = 800;
+const THROW_DAMAGE = 2;
 
 /**
  * Basic patrol enemy. Walks back and forth across a fixed x-range until
@@ -47,6 +50,10 @@ export class Patrol {
   facing: 1 | -1 = -1;
 
   private aiState: AIState = 'patrol';
+  private thrownUntilMs = 0;
+  /** Per-throw set of patrol IDs already damaged by this projectile, so a
+   *  thrown body can't multi-hit the same target while passing through. */
+  private thrownAlreadyHit = new Set<number>();
   private xMin: number;
   private xMax: number;
   private flashUntil = 0;
@@ -117,6 +124,24 @@ export class Patrol {
     if (this.hp <= 0) {
       // Settle: fall + horizontal friction. World takes care of the body.
       this.sprite.fillColor = FILL_DEAD;
+      return;
+    }
+
+    // Grabbed: AI fully paused. GameScene drives sprite position each frame
+    // via setGrabbedPosition().
+    if (this.aiState === 'grabbed') {
+      this.sprite.fillColor = FILL_HURT;
+      return;
+    }
+
+    // Thrown: physics carries us, no AI. Once duration elapses or we've
+    // settled on the ground, return to normal patrol.
+    if (this.aiState === 'thrown') {
+      this.sprite.fillColor = FILL_HURT;
+      const grounded = this.body.blocked.down || this.body.touching.down;
+      if (timeMs >= this.thrownUntilMs || grounded) {
+        this.endThrow();
+      }
       return;
     }
 
@@ -244,6 +269,100 @@ export class Patrol {
 
   setDebugHitboxes(visible: boolean): void {
     this.hitbox.setDebugVisible(visible);
+  }
+
+  // ─── Grab / throw API ──────────────────────────────────────────────
+
+  isGrabbed(): boolean { return this.aiState === 'grabbed'; }
+  isThrown(): boolean { return this.aiState === 'thrown'; }
+  isAlive(): boolean { return this.hp > 0; }
+
+  /** Lock into the player's grab. Cancels any active attack, freezes
+   *  physics, disables collisions so the patrol is purely a HUD prop
+   *  while grabbed. */
+  setGrabbed(): void {
+    if (this.hp <= 0) return;
+    this.aiState = 'grabbed';
+    this.attack.cancel();
+    this.hitbox.deactivate();
+    this.cancelLunge?.();
+    this.cancelLunge = null;
+    this.body.setAllowGravity(false);
+    this.body.setVelocity(0, 0);
+    // Prevent interactions while held — patrol shouldn't get hit by
+    // attacks, can't bonk into terrain, etc.
+    this.body.checkCollision.none = true;
+    this.body.enable = true; // keep enabled so position can still be updated
+  }
+
+  /** Move the grabbed sprite + body to a target position (driven by
+   *  GameScene to track the player's head). */
+  setGrabbedPosition(x: number, y: number): void {
+    if (this.aiState !== 'grabbed') return;
+    this.sprite.setPosition(x, y);
+    this.body.reset(x, y);
+  }
+
+  /** Auto-break: gentle release. Resumes patrol AI without throwing. */
+  releaseGrab(): void {
+    if (this.aiState !== 'grabbed') return;
+    this.body.setAllowGravity(true);
+    this.body.checkCollision.none = false;
+    this.aiState = 'patrol';
+    this.body.setVelocity(0, 0);
+  }
+
+  /** Throw with a velocity. Patrol becomes a projectile that damages
+   *  other patrols on overlap until lands or duration elapses. */
+  throwMe(vx: number, vy: number, timeMs: number): void {
+    if (this.aiState !== 'grabbed') return;
+    this.body.setAllowGravity(true);
+    this.body.checkCollision.none = false;
+    this.body.setVelocity(vx, vy);
+    this.aiState = 'thrown';
+    this.thrownUntilMs = timeMs + THROW_DURATION_MS;
+    this.thrownAlreadyHit.clear();
+    this.facing = vx >= 0 ? 1 : -1;
+  }
+
+  /**
+   * Called by GameScene each frame for any thrown patrol against every
+   * other live patrol. If they overlap and haven't been hit by THIS
+   * throw already, deal damage to the target.
+   */
+  damageIfThrownInto(other: Patrol, timeMs: number): boolean {
+    if (this.aiState !== 'thrown') return false;
+    if (other === this || !other.isAlive() || other.isGrabbed()) return false;
+    if (this.thrownAlreadyHit.has(other.combatant.id)) return false;
+
+    const a = this.body;
+    const b = other.body;
+    if (
+      a.x < b.x + b.width && a.x + a.width > b.x &&
+      a.y < b.y + b.height && a.y + a.height > b.y
+    ) {
+      this.thrownAlreadyHit.add(other.combatant.id);
+      other.takeDamage(
+        {
+          damage: THROW_DAMAGE,
+          fromX: this.sprite.x,
+          fromY: this.sprite.y,
+          knockbackX: 240 * this.facing,
+          knockbackY: -120,
+          hitstopMs: 90,
+          attackName: 'thrown-patrol',
+          team: 'player', // attribute kill to the player
+        },
+        timeMs,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  private endThrow(): void {
+    this.aiState = 'patrol';
+    this.thrownAlreadyHit.clear();
   }
 
   destroy(): void {
