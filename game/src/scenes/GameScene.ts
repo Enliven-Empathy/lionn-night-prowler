@@ -593,6 +593,8 @@ export class GameScene extends Phaser.Scene {
         distance: distancePx,
         score: this.score,
         enemiesKilled: this.runEnemiesKilled,
+        wallJumps: this.player.runStats.wallJumps,
+        ledgeClimbs: this.player.runStats.ledgeClimbs,
         startedAt: this.runStartedAt,
         endedAt: Date.now(),
       };
@@ -640,6 +642,7 @@ export class GameScene extends Phaser.Scene {
         summary,
         isNewBestDistance: bests.isNewBestDistance,
         isNewBestScore: bests.isNewBestScore,
+        newlyUnlockedBadges: bests.newlyUnlockedBadges,
       });
     } catch (e) {
       // eslint-disable-next-line no-console

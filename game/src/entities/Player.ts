@@ -2,6 +2,13 @@ import Phaser from 'phaser';
 import { PLAYER, COLORS } from '../core/constants';
 import { InputController } from '../core/input';
 import { LedgeQuery, MovementSnapshot, PlayerMovement, SlidePoleQuery } from '../movement/PlayerMovement';
+
+/** Per-run movement stat counters. Captured by GameScene at endRun and
+ *  passed into RunSummary for UserStore + the badge evaluator. */
+export interface PlayerRunStats {
+  wallJumps: number;
+  ledgeClimbs: number;
+}
 import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { DamageSystem } from '../combat/DamageSystem';
@@ -40,6 +47,12 @@ export class Player {
   /** Most recent hit-point world coords from a hitbox we landed. Used to spawn slash FX. */
   lastHitPoint: { x: number; y: number } | null = null;
 
+  /** Per-run stat counters bumped by movement-event callbacks from
+   *  PlayerMovement. GameScene reads these in endRun for the badge
+   *  evaluator. Reset to zero on construction (one Player instance per
+   *  scene, recreated on every restart, so no manual reset needed). */
+  runStats: PlayerRunStats = { wallJumps: 0, ledgeClimbs: 0 };
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -58,7 +71,19 @@ export class Player {
     this.body.setDragX(0);
     this.body.setSize(PLAYER.width, PLAYER.height);
 
-    this.movement = new PlayerMovement(this.body, input, findLedge, findSlidePole);
+    this.movement = new PlayerMovement(
+      this.body,
+      input,
+      findLedge,
+      findSlidePole,
+      (kind) => {
+        // Tally movement events into the per-run counters that feed
+        // badge unlocks (Wall Walker on first wallJump, Climber on
+        // first ledgeClimb, plus any future cumulative-style badges).
+        if (kind === 'wallJump') this.runStats.wallJumps += 1;
+        else if (kind === 'ledgeClimb') this.runStats.ledgeClimbs += 1;
+      },
+    );
     this.attack = new AttackState();
     this.hitbox = new Hitbox(scene, 'player');
     this.damage = damage;

@@ -17,6 +17,8 @@
  * across reloads.
  */
 
+import { evaluateBadges } from './Achievements';
+
 const KEY = 'lionn:userstore:v1';
 const SCHEMA_VERSION = 1;
 const TAG_LENGTH = 3;
@@ -46,8 +48,15 @@ export interface RunSummary {
   distance: number;
   /** Total orbs collected this run. */
   score: number;
-  /** Used by Phase 2 for the Bone Collector / First Blood badges. */
+  /** Used by First Blood / Bone Collector badges. */
   enemiesKilled: number;
+  /** Successful wall-jumps this run. Counted in PlayerMovement when a
+   *  wall-jump's velocity assignment fires; reaches Player → GameScene
+   *  via the per-frame snapshot. Used by Wall Walker badge. */
+  wallJumps: number;
+  /** Successful ledge climbs this run. Counted when climbLedge fires.
+   *  Used by Climber badge. */
+  ledgeClimbs: number;
   startedAt: number;
   endedAt: number;
 }
@@ -163,13 +172,30 @@ export const UserStore = {
     return profile;
   },
 
-  /** Apply a finished run to the current user. Returns whether either
-   *  best was beaten so the ResultsScene can show "NEW BEST" callouts. */
-  recordRun(summary: RunSummary): { isNewBestDistance: boolean; isNewBestScore: boolean } {
+  /** Apply a finished run to the current user. Updates per-mode bests,
+   *  totalRuns, and unlocks any newly-triggered badges. Returns the
+   *  three pieces of feedback ResultsScene needs:
+   *    - isNewBestDistance / isNewBestScore (for NEW BEST callouts)
+   *    - newlyUnlockedBadges (badge ids → ResultsScene shows a flourish
+   *      and BadgesScene gallery flips them from locked to unlocked).
+   *
+   *  Imports `Achievements` lazily (require) to keep the dependency
+   *  one-way: Achievements depends on UserStore types, but evaluating
+   *  triggers needs access to the badge list. The cycle is broken by
+   *  importing the evaluator at call time. */
+  recordRun(summary: RunSummary): {
+    isNewBestDistance: boolean;
+    isNewBestScore: boolean;
+    newlyUnlockedBadges: string[];
+  } {
     const d = readRaw();
-    if (!d.currentUserId) return { isNewBestDistance: false, isNewBestScore: false };
+    if (!d.currentUserId) {
+      return { isNewBestDistance: false, isNewBestScore: false, newlyUnlockedBadges: [] };
+    }
     const u = d.users[d.currentUserId];
-    if (!u) return { isNewBestDistance: false, isNewBestScore: false };
+    if (!u) {
+      return { isNewBestDistance: false, isNewBestScore: false, newlyUnlockedBadges: [] };
+    }
 
     const distFloor = Math.max(0, Math.floor(summary.distance));
     const isNewBestDistance = distFloor > (u.bestDistance[summary.mode] ?? 0);
@@ -179,8 +205,17 @@ export const UserStore = {
     if (isNewBestScore) u.bestScore[summary.mode] = summary.score;
     u.totalRuns += 1;
 
+    // Badge evaluation runs AFTER the bests/totalRuns update so triggers
+    // that read profile state see this run already folded in. Achievements.ts
+    // uses `import type` for our types so the dep is one-way at runtime.
+    const newlyUnlockedBadges = evaluateBadges(summary, u);
+    const now = Date.now();
+    for (const id of newlyUnlockedBadges) {
+      u.badges[id] = now;
+    }
+
     writeRaw(d);
-    return { isNewBestDistance, isNewBestScore };
+    return { isNewBestDistance, isNewBestScore, newlyUnlockedBadges };
   },
 
   /** Update an existing user's tag (rename). No-op if id missing. */

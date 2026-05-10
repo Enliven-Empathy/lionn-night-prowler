@@ -37,6 +37,13 @@ export type SlidePoleQuery = (
   side: -1 | 1,
 ) => { topY: number; bottomY: number } | null;
 
+/** One-shot movement events the consumer (Player → GameScene) tallies
+ *  for per-run counters that feed badge unlocks. Fired exactly once per
+ *  successful action: 'wallJump' on a wall-jump push-off, 'ledgeClimb'
+ *  on a successful ledge-grab climb. */
+export type MovementEventKind = 'wallJump' | 'ledgeClimb';
+export type MovementEventListener = (kind: MovementEventKind) => void;
+
 export interface MovementSnapshot {
   state: MovementState;
   facing: 1 | -1;
@@ -92,6 +99,7 @@ export class PlayerMovement {
 
   private findLedge?: LedgeQuery;
   private findSlidePole?: SlidePoleQuery;
+  private onMovementEvent?: MovementEventListener;
   /** When non-null, the player is hanging on a ledge — physics is frozen,
    *  position is pinned to the ledge edge, and only jump/down/away inputs
    *  are interpreted. */
@@ -102,13 +110,26 @@ export class PlayerMovement {
     input: InputController,
     findLedge?: LedgeQuery,
     findSlidePole?: SlidePoleQuery,
+    onMovementEvent?: MovementEventListener,
   ) {
     this.body = body;
     this.input = input;
     this.findLedge = findLedge;
     this.findSlidePole = findSlidePole;
+    this.onMovementEvent = onMovementEvent;
     this.body.setMaxVelocity(10000, PLAYER.maxFallSpeed);
     this.body.setGravityY(GRAVITY);
+  }
+
+  private emit(kind: MovementEventKind): void {
+    if (!this.onMovementEvent) return;
+    try {
+      this.onMovementEvent(kind);
+    } catch (e) {
+      // Listener bug shouldn't kill movement — log and continue.
+      // eslint-disable-next-line no-console
+      console.warn('[PlayerMovement] movement-event listener threw:', e);
+    }
   }
 
   setMovementLocked(locked: boolean): void {
@@ -382,6 +403,7 @@ export class PlayerMovement {
     this.jumpHeldThisJump = true;
     this.state = 'jumpRise';
     this.ledgeGrab = null;
+    this.emit('ledgeClimb');
   }
 
   snapshot(timeMs: number): MovementSnapshot {
@@ -546,6 +568,7 @@ export class PlayerMovement {
       // lastJumpPressAt next frame and trigger an instant air-jump
       // during the wall-jump-lockout window.
       this.input.consumePress('jump');
+      this.emit('wallJump');
     }
   }
 

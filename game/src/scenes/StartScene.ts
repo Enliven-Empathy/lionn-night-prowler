@@ -31,7 +31,7 @@ const COL_TEXT = 0xe6deff;
 const COL_TEXT_DIM = 0x9b8fb8;
 
 interface Action {
-  id: 'play' | 'switchMode' | 'changeUser' | 'badges';
+  id: 'play' | 'switchMode' | 'changeUser' | 'badges' | 'leaderboard';
   rect: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   hint?: Phaser.GameObjects.Text;
@@ -111,16 +111,17 @@ export class StartScene extends Phaser.Scene {
 
     // Action list — centered column of rectangles.
     const actionW = 360;
-    const actionH = 56;
-    const gap = 14;
-    const startY = 280;
+    const actionH = 52;
+    const gap = 12;
+    const startY = 270;
     const cx = VIEW.width / 2;
 
     this.actions = [
-      this.makeAction('play', cx, startY + 0 * (actionH + gap), actionW, actionH, this.playLabel(), 36),
-      this.makeAction('switchMode', cx, startY + 1 * (actionH + gap), actionW, actionH, 'SWITCH MODE', 22),
-      this.makeAction('changeUser', cx, startY + 2 * (actionH + gap), actionW, actionH, 'CHANGE USER', 22),
-      this.makeAction('badges', cx, startY + 3 * (actionH + gap), actionW, actionH, 'BADGES (soon)', 22, true),
+      this.makeAction('play', cx, startY + 0 * (actionH + gap), actionW, actionH, this.playLabel(), 32),
+      this.makeAction('switchMode', cx, startY + 1 * (actionH + gap), actionW, actionH, 'SWITCH MODE', 20),
+      this.makeAction('changeUser', cx, startY + 2 * (actionH + gap), actionW, actionH, 'CHANGE USER', 20),
+      this.makeAction('badges', cx, startY + 3 * (actionH + gap), actionW, actionH, 'BADGES', 20),
+      this.makeAction('leaderboard', cx, startY + 4 * (actionH + gap), actionW, actionH, 'LEADERBOARD', 20),
     ];
     this.modeLabel = this.actions[0].label; // PLAY's label updates when mode flips
 
@@ -263,13 +264,8 @@ export class StartScene extends Phaser.Scene {
   }
 
   private moveFocus(dir: -1 | 1): void {
-    let next = this.focused;
-    for (let i = 0; i < this.actions.length; i++) {
-      next = (next + dir + this.actions.length) % this.actions.length;
-      // Skip the disabled BADGES item — phase 2.
-      if (this.actions[next].id !== 'badges') break;
-    }
-    this.focused = next;
+    // Phase 2 enabled BADGES — no actions are disabled in the menu now.
+    this.focused = (this.focused + dir + this.actions.length) % this.actions.length;
     this.refreshFocus();
   }
 
@@ -279,9 +275,7 @@ export class StartScene extends Phaser.Scene {
       const focused = i === this.focused;
       a.rect.setFillStyle(focused ? COL_FOCUS_BG : COL_PANEL);
       a.rect.setStrokeStyle(focused ? 4 : 3, focused ? COL_FOCUS_BORDER : COL_BORDER);
-      if (a.id !== 'badges') {
-        a.label.setColor(focused ? '#ffffff' : `#${COL_TEXT.toString(16).padStart(6, '0')}`);
-      }
+      a.label.setColor(focused ? '#ffffff' : `#${COL_TEXT.toString(16).padStart(6, '0')}`);
     }
   }
 
@@ -291,7 +285,19 @@ export class StartScene extends Phaser.Scene {
     if (action.id === 'play') this.startGame();
     else if (action.id === 'switchMode') this.swapMode();
     else if (action.id === 'changeUser') this.gotoUserSelect();
-    else if (action.id === 'badges') { /* coming soon — no-op */ }
+    else if (action.id === 'badges') this.gotoScene('BadgesScene');
+    else if (action.id === 'leaderboard') this.gotoScene('LeaderboardScene');
+  }
+
+  private gotoScene(key: string): void {
+    this.confirming = true;
+    try {
+      this.scene.start(key);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`[StartScene] scene.start(${key}) threw:`, e);
+      this.confirming = false;
+    }
   }
 
   private swapMode(): void {

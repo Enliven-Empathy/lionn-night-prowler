@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { VIEW } from '../core/constants';
 import { GameMode, RunSummary, UserStore } from '../state/UserStore';
+import { BADGE_BY_ID, TIER_COLORS } from '../state/Achievements';
 
 /**
  * Game-over screen. Replaces the 5-layer auto-restart timer system that
@@ -30,6 +31,10 @@ export interface ResultsSceneData {
   summary: RunSummary;
   isNewBestDistance: boolean;
   isNewBestScore: boolean;
+  /** Badge ids unlocked by this run; ResultsScene renders each as a
+   *  small "BADGE UNLOCKED" chip below the stats. Undefined / empty
+   *  is treated as "no unlocks". */
+  newlyUnlockedBadges?: string[];
 }
 
 const COL_BG = 0x14091f;
@@ -57,6 +62,7 @@ export class ResultsScene extends Phaser.Scene {
   private summary!: RunSummary;
   private isNewBestDistance = false;
   private isNewBestScore = false;
+  private newlyUnlockedBadges: string[] = [];
 
   private actions: Action[] = [];
   private focused = 0;
@@ -88,15 +94,19 @@ export class ResultsScene extends Phaser.Scene {
         distance: 0,
         score: 0,
         enemiesKilled: 0,
+        wallJumps: 0,
+        ledgeClimbs: 0,
         startedAt: Date.now(),
         endedAt: Date.now(),
       };
       this.isNewBestDistance = false;
       this.isNewBestScore = false;
+      this.newlyUnlockedBadges = [];
     } else {
       this.summary = data.summary;
       this.isNewBestDistance = data.isNewBestDistance;
       this.isNewBestScore = data.isNewBestScore;
+      this.newlyUnlockedBadges = data.newlyUnlockedBadges ?? [];
     }
     this.confirming = false;
     this.autoReplayFired = false;
@@ -161,6 +171,56 @@ export class ResultsScene extends Phaser.Scene {
         fontSize: '14px',
         color: '#5a4a78',
       }).setOrigin(0.5).setDepth(10);
+    }
+
+    // Newly-unlocked badges. One small chip per unlock, laid out
+    // horizontally below the stats. Each chip has the tier color +
+    // badge name. A small fanfare tween makes the whole row pulse on
+    // entry so the kid notices the reward.
+    if (this.newlyUnlockedBadges.length > 0) {
+      const headerY = score2Y + 110;
+      this.add.text(VIEW.width / 2, headerY, 'BADGE UNLOCKED', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '14px',
+        color: '#ffd86a',
+      }).setOrigin(0.5).setDepth(10);
+
+      const chipW = 200;
+      const chipH = 44;
+      const chipGap = 12;
+      const chipsRow = this.newlyUnlockedBadges.length;
+      const totalW = chipW * chipsRow + chipGap * (chipsRow - 1);
+      const startX = (VIEW.width - totalW) / 2;
+      const chipY = headerY + 36;
+
+      const chipObjs: Phaser.GameObjects.Rectangle[] = [];
+      for (let i = 0; i < this.newlyUnlockedBadges.length; i++) {
+        const id = this.newlyUnlockedBadges[i];
+        const def = BADGE_BY_ID[id];
+        const col = def ? TIER_COLORS[def.tier] : TIER_COLORS.skill;
+        const cx = startX + chipW / 2 + i * (chipW + chipGap);
+        const rect = this.add.rectangle(cx, chipY, chipW, chipH, col.fill);
+        rect.setStrokeStyle(3, col.border);
+        rect.setDepth(11);
+        chipObjs.push(rect);
+        this.add.text(cx, chipY, (def?.name ?? id).toUpperCase(), {
+          fontFamily: 'Cinzel, Georgia, serif',
+          fontSize: '16px',
+          color: col.text,
+        }).setOrigin(0.5).setDepth(12);
+      }
+
+      // Pulse fanfare — subtle scale-up + back. Runs once on enter; we
+      // don't loop because the chip is supposed to settle and stay
+      // readable while the kid decides their next move.
+      this.tweens.add({
+        targets: chipObjs,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        duration: 220,
+        yoyo: true,
+        ease: 'Quad.easeOut',
+      });
     }
 
     // Action buttons.

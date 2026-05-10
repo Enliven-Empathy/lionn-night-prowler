@@ -8,6 +8,7 @@ import { StartScene } from './scenes/StartScene';
 import { UserSelectScene } from './scenes/UserSelectScene';
 import { ResultsScene } from './scenes/ResultsScene';
 import { BadgesScene } from './scenes/BadgesScene';
+import { LeaderboardScene } from './scenes/LeaderboardScene';
 import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -43,6 +44,7 @@ const config: Phaser.Types.Core.GameConfig = {
     UserSelectScene,
     ModeSelectScene,
     BadgesScene,
+    LeaderboardScene,
     GameScene,
     ResultsScene,
   ],
