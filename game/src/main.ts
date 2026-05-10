@@ -82,7 +82,54 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
 };
 
+// ─── Engine-level safety nets ──────────────────────────────────────
+// The "purple frozen canvas" bug was an exception thrown deep inside
+// Phaser's chained scene-shutdown (stopListeners → removeAllListeners
+// on an undefined target). The exception propagated up through
+// Phaser.Game.step into the RAF callback, killing the loop. No more
+// frames are scheduled, the WebGL canvas keeps its last clear color
+// (purple), and input does nothing because no scene's update runs.
+//
+// Per-scene defences (immediate `confirming = true`, detach gamepad
+// listener before scene.start, try/catch around our own cleanups)
+// were necessary but not sufficient — the actual throw is in Phaser's
+// internals, not our code. So we patch Phaser at the engine layer
+// here, before constructing the game:
+//
+//   1. Wrap Game.prototype.step in try/catch. Any exception inside a
+//      single frame is caught and logged; the next RAF schedules
+//      normally, the loop survives.
+//   2. Watchdog timer: if step hasn't ticked for >2 s while the page
+//      is visible, force a reload. Catches the case where a patch
+//      misses an edge and the loop genuinely dies — guarantees the
+//      kid never sees a permanently frozen screen.
+{
+  const origStep = Phaser.Game.prototype.step;
+  Phaser.Game.prototype.step = function patchedStep(time: number, delta: number) {
+    try {
+      return origStep.call(this, time, delta);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[step-guard] caught engine-level step error:', e);
+    }
+  };
+}
+
 const game = new Phaser.Game(config);
+
+// Watchdog: track the last successful step. If the page is visible
+// (so we expect the loop to be running) and no step has fired for >2 s,
+// the loop has died — reload to recover.
+let lastStepAt = performance.now();
+game.events.on('poststep', () => { lastStepAt = performance.now(); });
+window.setInterval(() => {
+  if (document.hidden) return;          // tab in background, RAF naturally throttled
+  if (performance.now() - lastStepAt > 2000) {
+    // eslint-disable-next-line no-console
+    console.warn('[watchdog] no Phaser step in >2 s — reloading page');
+    try { window.location.reload(); } catch { /* nothing left */ }
+  }
+}, 500);
 
 // Make the canvas focusable so click-to-focus works (default tabIndex
 // is -1, which means click-on-canvas can't move keyboard focus to it).
