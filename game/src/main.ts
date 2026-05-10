@@ -32,6 +32,38 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   input: {
     gamepad: true,
+    keyboard: {
+      // Default keyboard target is `window`, which is correct — keys
+      // delivered via window listeners survive even if the canvas
+      // isn't focused. The reason arrow keys looked "dead" in the
+      // menus and the game was that we never told Phaser to capture
+      // them: the browser was eating UP/DOWN/SPACE for page-scrolling
+      // before our handlers ran. Listing the keys here calls
+      // preventDefault on each, which routes them to Phaser cleanly.
+      capture: [
+        Phaser.Input.Keyboard.KeyCodes.SPACE,
+        Phaser.Input.Keyboard.KeyCodes.UP,
+        Phaser.Input.Keyboard.KeyCodes.DOWN,
+        Phaser.Input.Keyboard.KeyCodes.LEFT,
+        Phaser.Input.Keyboard.KeyCodes.RIGHT,
+        Phaser.Input.Keyboard.KeyCodes.W,
+        Phaser.Input.Keyboard.KeyCodes.A,
+        Phaser.Input.Keyboard.KeyCodes.S,
+        Phaser.Input.Keyboard.KeyCodes.D,
+        Phaser.Input.Keyboard.KeyCodes.M,
+        Phaser.Input.Keyboard.KeyCodes.R,
+        Phaser.Input.Keyboard.KeyCodes.J,
+        Phaser.Input.Keyboard.KeyCodes.K,
+        Phaser.Input.Keyboard.KeyCodes.SHIFT,
+        Phaser.Input.Keyboard.KeyCodes.ENTER,
+        Phaser.Input.Keyboard.KeyCodes.ESC,
+        Phaser.Input.Keyboard.KeyCodes.ONE,
+        Phaser.Input.Keyboard.KeyCodes.TWO,
+        Phaser.Input.Keyboard.KeyCodes.THREE,
+        Phaser.Input.Keyboard.KeyCodes.FOUR,
+        Phaser.Input.Keyboard.KeyCodes.FIVE,
+      ],
+    },
   },
   // preserveDrawingBuffer lets external tooling read canvas pixels via
   // drawImage / toDataURL. Tiny perf cost; only enabled in dev.
@@ -51,6 +83,21 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+
+// Make the canvas focusable so click-to-focus works (default tabIndex
+// is -1, which means click-on-canvas can't move keyboard focus to it).
+// Belt-and-braces alongside the addCapture above — even if the user
+// has clicked outside the canvas first, focusing it on click brings
+// keys back into the game.
+game.events.once('ready', () => {
+  const canvas = game.canvas;
+  if (!canvas) return;
+  canvas.setAttribute('tabindex', '0');
+  canvas.style.outline = 'none';
+  canvas.addEventListener('pointerdown', () => canvas.focus());
+  // Initial focus so the first key works without a click.
+  try { canvas.focus(); } catch { /* some browsers throw if window not focused */ }
+});
 
 // Dev-only inspection hook. Lets external tooling (preview eval, devtools)
 // reach into the running game without requiring a debug build flag.

@@ -70,6 +70,19 @@ export class StartScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset per-instance state. Phaser caches scene instances, so class-
+    // field initializers (private confirming = false) only run ONCE at
+    // construction. Without this reset, returning to StartScene after
+    // a transition leaves confirming=true and every subsequent click /
+    // gamepad press silently no-ops via the if-confirming-return guards.
+    // That was the "menu freezes after one click" bug.
+    this.confirming = false;
+    this.actions = [];
+    this.focused = 0;
+    this.prev = { up: false, down: false, left: false, right: false, confirm: false, m: false };
+    this.prevPadX = 0;
+    this.prevPadY = 0;
+
     // Backdrop.
     this.add.rectangle(VIEW.width / 2, VIEW.height / 2, VIEW.width, VIEW.height, COL_BG)
       .setDepth(-100);
@@ -345,7 +358,11 @@ export class StartScene extends Phaser.Scene {
     const m = this.mode;
     const dist = (u.bestDistance[m] / 100).toFixed(1);
     const score = u.bestScore[m];
-    return `best  ${dist} m   ·   best  ★ ${score}   ·   runs  ${u.totalRuns}`;
+    // Label specifies "dist" + "score" so the kid doesn't see two columns
+    // both labelled "best". `total runs` uses the lifetime counter (the
+    // store doesn't track per-mode run counts yet — adding that requires
+    // a schema bump; relabelled clearly until then).
+    return `best dist  ${dist} m   ·   best score  ★ ${score}   ·   total runs  ${u.totalRuns}`;
   }
 
   private firstStandardPad(): Phaser.Input.Gamepad.Gamepad | undefined {

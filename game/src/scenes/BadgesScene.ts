@@ -53,6 +53,14 @@ export class BadgesScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset per-instance state — see StartScene.create comment for why.
+    this.confirming = false;
+    this.tiles = [];
+    this.focused = 0;
+    this.prev = { up: false, down: false, left: false, right: false, back: false };
+    this.prevPadX = 0;
+    this.prevPadY = 0;
+
     this.add.rectangle(VIEW.width / 2, VIEW.height / 2, VIEW.width, VIEW.height, COL_BG)
       .setDepth(-100);
 

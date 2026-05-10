@@ -102,6 +102,12 @@ export class LeaderboardScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset per-instance state — see StartScene.create comment for why.
+    this.confirming = false;
+    this.rendered = [];
+    this.prev = { left: false, right: false, back: false, one: false, two: false, three: false, four: false, five: false };
+    this.prevPadX = 0;
+
     this.add.rectangle(VIEW.width / 2, VIEW.height / 2, VIEW.width, VIEW.height, COL_BG)
       .setDepth(-100);
 
