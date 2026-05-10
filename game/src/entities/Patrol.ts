@@ -12,11 +12,15 @@ import { AudioManager } from '../audio/AudioManager';
 import { SFX } from '../audio/Sfx';
 
 const SIZE = { w: 46, h: 70 };
+const BOSS_SCALE = 1.5;            // bosses are bigger so they read as "different"
 const FILL_PATROL = 0x3a2a55;
 const FILL_CHASE = 0x5a3a85;
 const FILL_HURT = 0xff8caf;
 const FILL_DEAD = 0x140a1f;
+const FILL_BOSS = 0x6a1a2a;        // dark crimson — visually distinct from patrol violet
+const FILL_BOSS_CHASE = 0xa0303a;  // brighter crimson when alerted
 const STROKE = 0x9b59ff;
+const STROKE_BOSS = 0xff8c5a;      // amber outline — combat read at a glance
 
 const DETECT_X = 280;
 const DETECT_Y = 120;
@@ -64,9 +68,14 @@ export class Patrol {
   readonly attack: AttackState;
   readonly hitbox: Hitbox;
   combatant!: Combatant;
+  /** When true, this is a "boss" patrol — bigger, more HP, distinct
+   *  visual. GameScene reads this on hit-kill to award the Night
+   *  Slayer badge + spawn a bonus reward. Public so the damage
+   *  callback can see it. */
+  readonly isBoss: boolean;
 
-  hp = 3;
-  maxHp = 3;
+  hp: number;
+  maxHp: number;
   facing: 1 | -1 = -1;
 
   private aiState: AIState = 'patrol';
@@ -117,12 +126,23 @@ export class Patrol {
     audio: AudioManager,
     hazardAhead?: PatrolHazardProbe,
     variant: PatrolVariant = 'patrol',
+    isBoss: boolean = false,
   ) {
-    this.sprite = scene.add.rectangle(x, y, SIZE.w, SIZE.h, FILL_PATROL);
-    this.sprite.setStrokeStyle(2, STROKE, 0.85);
+    this.isBoss = isBoss;
+    // Boss bodies are 1.5× the regular patrol size; they soak more
+    // damage too (8 vs 3 HP) so the kid commits to a real combat
+    // engagement to take one down. Reward = Night Slayer badge + bonus
+    // tier-3 orb dropped by GameScene on kill.
+    const w = isBoss ? Math.round(SIZE.w * BOSS_SCALE) : SIZE.w;
+    const h = isBoss ? Math.round(SIZE.h * BOSS_SCALE) : SIZE.h;
+    this.hp = isBoss ? 8 : 3;
+    this.maxHp = isBoss ? 8 : 3;
+
+    this.sprite = scene.add.rectangle(x, y, w, h, isBoss ? FILL_BOSS : FILL_PATROL);
+    this.sprite.setStrokeStyle(isBoss ? 3 : 2, isBoss ? STROKE_BOSS : STROKE, 0.92);
     scene.physics.add.existing(this.sprite);
     this.body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    this.body.setSize(SIZE.w, SIZE.h);
+    this.body.setSize(w, h);
     this.body.setMaxVelocity(560, 1400);
     this.body.setCollideWorldBounds(false);
     // Gravity must be enabled from spawn — without it, knockback's
@@ -206,20 +226,23 @@ export class Patrol {
       return;
     }
 
+    const idleFill = this.isBoss ? FILL_BOSS : FILL_PATROL;
+    const chaseFill = this.isBoss ? FILL_BOSS_CHASE : FILL_CHASE;
+
     if (timeMs < this.hurtUntil) {
       // Stunned by recent hit; physics carries the knockback.
       this.aiState = 'hurt';
-      this.sprite.fillColor = timeMs < this.flashUntil ? FILL_HURT : FILL_PATROL;
+      this.sprite.fillColor = timeMs < this.flashUntil ? FILL_HURT : idleFill;
       this.maybeUpdateAttack(timeMs);
       return;
     }
 
-    // Color tint reflects state.
+    // Color tint reflects state — boss palette swaps in when isBoss.
     const isChasing = this.aiState === 'chase' || this.aiState === 'attack';
     this.sprite.fillColor =
       timeMs < this.flashUntil ? FILL_HURT :
-      isChasing ? FILL_CHASE :
-      FILL_PATROL;
+      isChasing ? chaseFill :
+      idleFill;
 
     // Dummies don't aggro the player. They're slam targets that exist
     // only to be ground-pounded — keeps parkour rooms focused on

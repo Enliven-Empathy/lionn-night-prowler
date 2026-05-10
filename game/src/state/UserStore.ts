@@ -57,6 +57,9 @@ export interface RunSummary {
   /** Successful ledge climbs this run. Counted when climbLedge fires.
    *  Used by Climber badge. */
   ledgeClimbs: number;
+  /** Bosses defeated this run. A boss is a Patrol spawned with
+   *  isBoss=true (1.5x size, 8 HP). Used by the Night Slayer badge. */
+  bossesKilled: number;
   startedAt: number;
   endedAt: number;
 }

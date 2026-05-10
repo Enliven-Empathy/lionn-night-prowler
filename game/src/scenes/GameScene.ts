@@ -110,9 +110,13 @@ export class GameScene extends Phaser.Scene {
    *  to populate RunSummary.startedAt for ResultsScene + UserStore. */
   private runStartedAt = 0;
   /** Per-run enemy kill count. Bumped from the damage system's onHit
-   *  callback whenever a player-team hit kills the target. Reserved
-   *  for phase-2 badges (First Blood, Bone Collector). */
+   *  callback whenever a player-team hit kills the target. Used by
+   *  First Blood / Bone Collector badges. */
   private runEnemiesKilled = 0;
+  /** Per-run boss kill count. Bumped only when the killed combatant
+   *  matches a Patrol with isBoss=true. Used by the Night Slayer badge
+   *  + the bonus tier-3 reward drop. */
+  private runBossesKilled = 0;
   private scoreText!: Phaser.GameObjects.Text;
   private bestScoreText!: Phaser.GameObjects.Text;
 
@@ -143,6 +147,7 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.runStartedAt = Date.now();
     this.runEnemiesKilled = 0;
+    this.runBossesKilled = 0;
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
     if (this.autoRestartTimerId !== null) {
@@ -177,7 +182,19 @@ export class GameScene extends Phaser.Scene {
     this.damage.onHit((event, target) => {
       if (event.team !== 'player') return;
       this.audio.play(attackHitSfx(event.attackName));
-      if (!target.isAlive()) this.runEnemiesKilled += 1;
+      if (!target.isAlive()) {
+        this.runEnemiesKilled += 1;
+        // Boss-killed detection. Look up the patrol whose combatant
+        // id matches the killed target; if it was a boss, count it
+        // and drop a bonus reward at its position. The Night Slayer
+        // badge unlocks via UserStore.recordRun reading the
+        // RunSummary.bossesKilled count.
+        const killedPatrol = this.patrols.find((p) => p.combatant.id === target.id);
+        if (killedPatrol && killedPatrol.isBoss) {
+          this.runBossesKilled += 1;
+          this.spawnBossReward(killedPatrol.sprite.x, killedPatrol.sprite.y);
+        }
+      }
     });
 
     // Mode-driven level construction. Parkour and Endless both expose
@@ -595,6 +612,7 @@ export class GameScene extends Phaser.Scene {
         enemiesKilled: this.runEnemiesKilled,
         wallJumps: this.player.runStats.wallJumps,
         ledgeClimbs: this.player.runStats.ledgeClimbs,
+        bossesKilled: this.runBossesKilled,
         startedAt: this.runStartedAt,
         endedAt: Date.now(),
       };
@@ -679,6 +697,7 @@ export class GameScene extends Phaser.Scene {
         this.audio,
         (footX, footY) => this.patrolStepHazardous(footX, footY),
         variant,
+        s.isBoss ?? false,
       );
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
@@ -750,6 +769,22 @@ export class GameScene extends Phaser.Scene {
   private drainCollectibleSpawns(): void {
     for (const s of this.level.drainCollectibleSpawns()) {
       this.collectibles.push(new Collectible(this, s.x, s.y, s.tier));
+    }
+  }
+
+  /**
+   * Spawn a tier-3 reward orb at the position of a defeated boss + a
+   * small camera flash so the kid feels the kill landed. Doesn't go
+   * through the level handle (level didn't author this orb — the kill
+   * earned it dynamically).
+   */
+  private spawnBossReward(x: number, y: number): void {
+    this.collectibles.push(new Collectible(this, x, y - 32, 3));
+    try {
+      this.cameras.main.flash(220, 255, 200, 80, false);
+      this.fx.shake(180, 0.012);
+    } catch {
+      // FX is non-critical; never let it break the run.
     }
   }
 

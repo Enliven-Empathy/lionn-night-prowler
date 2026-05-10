@@ -103,6 +103,13 @@ export const BADGES: BadgeDef[] = [
     tier: 'rare',
     trigger: (r) => r.score >= 50,
   },
+  {
+    id: 'night_slayer',
+    name: 'Night Slayer',
+    description: 'Defeat your first boss.',
+    tier: 'rare',
+    trigger: (r) => r.bossesKilled >= 1,
+  },
 ];
 
 /** Quick lookup by id. Useful for ResultsScene + BadgesScene rendering. */

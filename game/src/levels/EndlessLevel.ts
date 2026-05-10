@@ -41,6 +41,11 @@ export interface EnemySpawn {
   /** Patrol horizontal bounds — enemy reverses at these. */
   xMin: number;
   xMax: number;
+  /** Bigger, tougher patrol — see Patrol's isBoss flag. Spawned
+   *  occasionally on wide-ground chunks past chunk 8 in endless mode.
+   *  Defeating one drops a bonus tier-3 reward and unlocks the
+   *  Night Slayer badge. */
+  isBoss?: boolean;
 }
 
 export interface CollectibleSpawn {
@@ -570,11 +575,20 @@ export class EndlessLevel {
     const xMin = pick.x + buffer;
     const xMax = pick.x + pick.w - buffer;
     const groundTop = pick.y;
+
+    // Boss roll: 25% chance on chunks past index 8, but ONLY on
+    // wide-enough ground segments (≥ 280 px) so the bigger body has
+    // room to patrol without immediately walking off the edge. Bosses
+    // are a special encounter, not a guaranteed every-Nth-chunk
+    // appearance — keeps them feeling earned.
+    const isBoss = index >= 8 && pick.w >= 280 && this.rng() < 0.25;
+
     return {
       x: (xMin + xMax) / 2,
       y: groundTop - 36, // body half-height; sits on ground
       xMin,
       xMax,
+      isBoss,
     };
   }
 
