@@ -256,6 +256,14 @@ export class ModeSelectScene extends Phaser.Scene {
 
   private confirm(mode: Mode): void {
     this.game.registry.set('mode', mode);
+    // Persist across page reloads so the kid only picks a mode once. The
+    // M shortcut from GameScene routes back here for switching. Wrapped
+    // in try/catch because some privacy-mode browsers throw on write.
+    try {
+      window.localStorage.setItem('lionn:mode', mode);
+    } catch {
+      // ignore — registry-only persistence is the fallback
+    }
     this.scene.start('GameScene');
   }
 

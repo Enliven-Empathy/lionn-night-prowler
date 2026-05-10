@@ -38,11 +38,28 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     this.registerLionnAnims();
-    // Show the mode picker once at startup. After the kid picks, the
-    // selection lives in game.registry; subsequent scene.restart loops
-    // (auto-restart on death etc) re-enter GameScene directly without
-    // re-prompting. To switch modes, press M during gameplay.
-    this.scene.start('ModeSelectScene');
+    // Mode persistence ladder:
+    //   1. localStorage (survives page reloads — the nuclear auto-restart
+    //      reload, manual refresh, fresh tab on the same origin).
+    //   2. game.registry (survives in-game scene.restart).
+    //   3. Mode picker (first run, or invalid stored value).
+    // The picker remains reachable in-game via the M shortcut. Once the
+    // kid has picked once, restarts and reloads keep them in that mode
+    // until they explicitly change it.
+    let storedMode: 'endless' | 'parkour' | null = null;
+    try {
+      const raw = window.localStorage.getItem('lionn:mode');
+      if (raw === 'endless' || raw === 'parkour') storedMode = raw;
+    } catch {
+      // localStorage can throw under privacy modes; fall through to
+      // picker. Try/catch only — no log spam.
+    }
+    if (storedMode) {
+      this.game.registry.set('mode', storedMode);
+      this.scene.start('GameScene');
+    } else {
+      this.scene.start('ModeSelectScene');
+    }
   }
 
   private registerLionnAnims(): void {
