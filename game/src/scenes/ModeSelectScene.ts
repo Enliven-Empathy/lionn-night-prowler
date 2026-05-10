@@ -3,28 +3,31 @@ import { VIEW } from '../core/constants';
 
 /**
  * Mode picker. Renders two cards (ENDLESS / PARKOUR) and writes the
- * choice to game.registry under 'mode' so GameScene can read it
- * without coupling.
+ * choice to game.registry + localStorage so the rest of the game can
+ * read it without coupling.
  *
  * Inputs:
  *   - Keyboard: 1 / Left = ENDLESS, 2 / Right = PARKOUR. SPACE / ENTER
  *     confirms the highlighted card.
  *   - Gamepad: D-pad / left stick LEFT/RIGHT to highlight, Cross / Start
- *     to confirm.
+ *     to confirm. Uses Phaser's per-button 'down' EVENTS rather than
+ *     polling button.pressed every frame — that's important because
+ *     DualSense controllers paired over Bluetooth sometimes report
+ *     Cross (button 0) as `pressed = true` from scene start, which a
+ *     polling rising-edge check sees as "already held forever" and the
+ *     real press never registers. The kid then experiences a visual
+ *     freeze: pressing the controller does nothing. Phaser's 'down'
+ *     event tracks the actual transition, so it fires correctly even
+ *     when the initial state is stuck.
  *   - Mouse: click a card to confirm.
  *
  * Implementation notes:
  *   - Keys are cached in create(); update() never calls addKey() so
- *     listeners don't pile up across frames. (The previous version
- *     re-added keys every tick, which combined with Phaser's scene-
- *     shutdown chain to throw "Cannot read properties of undefined
- *     (reading 'removeAllListeners')" and freeze the RAF loop on first
- *     transition out — this rewrite avoids that path.)
- *   - Rising-edge detection via `key.isDown` + previous-frame snapshots,
- *     not `kb.checkDown` (which silently does nothing without a duration
- *     argument).
+ *     listeners don't pile up across frames.
  *   - Whole `update()` body is wrapped in try/catch so any future input-
- *     plugin hiccup logs and continues instead of killing the loop.
+ *     plugin hiccup logs and continues instead of killing the RAF loop.
+ *   - Gamepad listener is removed in shutdown() so a stale callback
+ *     can't fire after the scene has transitioned away.
  */
 
 type Mode = 'endless' | 'parkour';
@@ -61,7 +64,10 @@ export class ModeSelectScene extends Phaser.Scene {
   private prevRight = false;
   private prevConfirm = false;
   private prevPadAxis = 0;
-  private prevPadConfirm = true; // suppress whatever was held entering this scene
+  /** Set true once we've handed off to GameScene so the gamepad event
+   *  callback (which can fire one more time before Phaser fully detaches
+   *  this scene's listeners) can't trigger a second scene.start. */
+  private confirming = false;
 
   constructor() {
     super('ModeSelectScene');
@@ -136,8 +142,53 @@ export class ModeSelectScene extends Phaser.Scene {
     this.prevLeft = !!(this.keys?.left.isDown || this.keys?.a.isDown);
     this.prevRight = !!(this.keys?.right.isDown || this.keys?.d.isDown);
     this.prevConfirm = !!(this.keys?.space.isDown || this.keys?.enter.isDown);
-    this.prevPadConfirm = true;
+    this.confirming = false;
+
+    // Gamepad: subscribe to per-button DOWN events. Phaser tracks the
+    // up→down transition itself, so DualSense BT idle-press of Cross
+    // (button 0 stuck at pressed=true) doesn't fire a 'down' event —
+    // only a real press does. Polling button.pressed every frame, like
+    // the previous version did, would never see the transition because
+    // the state never CHANGES once it's stuck.
+    const gp = this.input.gamepad;
+    if (gp) {
+      gp.on('down', this.onGamepadDown, this);
+    }
+
+    // Clean up the listener when the scene transitions out, otherwise
+    // the next scene's gamepad input would still trigger this callback
+    // and stomp on its own state.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (gp) gp.off('down', this.onGamepadDown, this);
+    });
   }
+
+  /** Phaser fires this on every gamepad button DOWN edge (real press,
+   *  not idle-stuck state). The Phaser plugin emits with (pad, button,
+   *  index, value) signature in 3.55+. We dispatch by button index. */
+  private onGamepadDown = (
+    _pad: Phaser.Input.Gamepad.Gamepad,
+    button: Phaser.Input.Gamepad.Button | undefined,
+  ): void => {
+    if (!button || this.confirming) return;
+    try {
+      switch (button.index) {
+        case 0:  // Cross
+        case 9:  // Start
+          this.confirmCurrent();
+          break;
+        case 14: // dpad left
+          this.move(-1);
+          break;
+        case 15: // dpad right
+          this.move(1);
+          break;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[ModeSelectScene] gamepad-down handler threw:', e);
+    }
+  };
 
   override update(): void {
     try {
@@ -170,25 +221,18 @@ export class ModeSelectScene extends Phaser.Scene {
       this.prevConfirm = confirmDown;
     }
 
-    // GAMEPAD ──────────────────────────────────────────────────────────
+    // GAMEPAD STICK (analog) ───────────────────────────────────────────
+    // D-pad buttons + Cross/Start are handled via the 'down' EVENT
+    // listener registered in create() — that path is immune to idle-press
+    // bugs. The analog stick is polled here because there's no natural
+    // "down" event for a stick crossing a threshold.
     const pad = this.firstStandardPad();
-    if (pad) {
+    if (pad && pad.axes && pad.axes.length > 0) {
       const axisX = pad.axes[0]?.value ?? 0;
-      const dpadLeft = pad.buttons[14]?.pressed ?? false;
-      const dpadRight = pad.buttons[15]?.pressed ?? false;
-      const cross = pad.buttons[0]?.pressed ?? false;
-      const start = pad.buttons[9]?.pressed ?? false;
-
-      const padDir =
-        (axisX < -0.5 || dpadLeft) ? -1 :
-        (axisX > 0.5 || dpadRight) ? 1 : 0;
+      const padDir = axisX < -0.5 ? -1 : axisX > 0.5 ? 1 : 0;
       if (padDir === -1 && this.prevPadAxis !== -1) this.move(-1);
       if (padDir === 1 && this.prevPadAxis !== 1) this.move(1);
       this.prevPadAxis = padDir;
-
-      const confirmHeld = cross || start;
-      if (confirmHeld && !this.prevPadConfirm) this.confirmCurrent();
-      this.prevPadConfirm = confirmHeld;
     }
   }
 
@@ -255,6 +299,8 @@ export class ModeSelectScene extends Phaser.Scene {
   }
 
   private confirm(mode: Mode): void {
+    if (this.confirming) return; // re-entry guard for the in-flight transition
+    this.confirming = true;
     this.game.registry.set('mode', mode);
     // Persist across page reloads so the kid only picks a mode once. The
     // M shortcut from GameScene routes back here for switching. Wrapped
@@ -264,7 +310,20 @@ export class ModeSelectScene extends Phaser.Scene {
     } catch {
       // ignore — registry-only persistence is the fallback
     }
-    this.scene.start('GameScene');
+    // Visual flash on the confirmed card so the kid gets feedback that
+    // confirm fired even if the scene transition takes a beat.
+    const card = this.cards.find((c) => c.mode === mode);
+    if (card) {
+      card.rect.setFillStyle(0xb47bff);
+      this.cameras.main.flash(140, 180, 120, 220);
+    }
+    try {
+      this.scene.start('GameScene');
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[ModeSelectScene] scene.start threw:', e);
+      this.confirming = false;
+    }
   }
 
   private firstStandardPad(): Phaser.Input.Gamepad.Gamepad | undefined {
