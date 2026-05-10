@@ -172,7 +172,18 @@ export class StartScene extends Phaser.Scene {
     const gp = this.input.gamepad;
     if (gp) gp.on('down', this.onGamepadDown, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      // try/catch: Phaser's input subsystem may have already nulled
+      // internals by the time this listener runs (we're inside the
+      // shutdown chain). Without the catch, a TypeError here bubbles
+      // through Phaser's step() and kills the entire RAF loop —
+      // exactly the "purple frozen canvas" symptom described in the
+      // bug report.
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[StartScene] gamepad cleanup threw (harmless):', e);
+      }
     });
   }
 
@@ -293,17 +304,39 @@ export class StartScene extends Phaser.Scene {
   }
 
   private activate(): void {
-    if (this.confirming) return;
     const action = this.actions[this.focused];
+    // Inline mode toggle — doesn't transition, so we don't lock.
+    if (action.id === 'switchMode') {
+      this.swapMode();
+      return;
+    }
+    // All other actions transition. The guard below + the immediate
+    // detach of the gamepad listener close the same-tick double-fire
+    // window described in the bug report (Chrome's gamepad-to-key
+    // shim plus our event listener both calling activate on the same
+    // frame). The first call wins and detaches; the second sees
+    // confirming=true and bails before reaching scene.start.
+    if (this.confirming) return;
+    this.confirming = true;
+    this.detachGamepadListener();
     if (action.id === 'play') this.startGame();
-    else if (action.id === 'switchMode') this.swapMode();
     else if (action.id === 'changeUser') this.gotoUserSelect();
     else if (action.id === 'badges') this.gotoScene('BadgesScene');
     else if (action.id === 'leaderboard') this.gotoScene('LeaderboardScene');
   }
 
+  private detachGamepadListener(): void {
+    const gp = this.input.gamepad;
+    if (!gp) return;
+    try {
+      gp.off('down', this.onGamepadDown, this);
+    } catch {
+      // Phaser may have already nulled internals during a chained
+      // shutdown — ignore so we don't propagate.
+    }
+  }
+
   private gotoScene(key: string): void {
-    this.confirming = true;
     try {
       this.scene.start(key);
     } catch (e) {
@@ -326,7 +359,7 @@ export class StartScene extends Phaser.Scene {
   }
 
   private startGame(): void {
-    this.confirming = true;
+    // confirming + gamepad detach already done in activate().
     this.cameras.main.flash(120, 180, 120, 220);
     try {
       this.scene.start('GameScene');
@@ -338,7 +371,6 @@ export class StartScene extends Phaser.Scene {
   }
 
   private gotoUserSelect(): void {
-    this.confirming = true;
     try {
       this.scene.start('UserSelectScene');
     } catch (e) {

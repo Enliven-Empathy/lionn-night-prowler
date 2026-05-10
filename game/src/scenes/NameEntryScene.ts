@@ -196,7 +196,12 @@ export class NameEntryScene extends Phaser.Scene {
     const gp = this.input.gamepad;
     if (gp) gp.on('down', this.onGamepadDown, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[NameEntryScene] gamepad cleanup threw:', e);
+      }
     });
   }
 
@@ -302,6 +307,7 @@ export class NameEntryScene extends Phaser.Scene {
   private commit(): void {
     if (this.confirming) return;
     this.confirming = true;
+    this.detachGamepadListener();
     const tag = this.currentTag();
     if (this.mode === 'rename' && this.renameUserId) {
       UserStore.renameUser(this.renameUserId, tag);
@@ -324,11 +330,18 @@ export class NameEntryScene extends Phaser.Scene {
     if (this.mode !== 'rename') return;
     if (this.confirming) return;
     this.confirming = true;
+    this.detachGamepadListener();
     try {
       this.scene.start(this.returnTo);
     } catch {
       this.confirming = false;
     }
+  }
+
+  private detachGamepadListener(): void {
+    const gp = this.input.gamepad;
+    if (!gp) return;
+    try { gp.off('down', this.onGamepadDown, this); } catch { /* ignore */ }
   }
 
   private firstStandardPad(): Phaser.Input.Gamepad.Gamepad | undefined {

@@ -272,7 +272,14 @@ export class ResultsScene extends Phaser.Scene {
     }, 12000);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      // try/catch — Phaser internals may already be partially nulled
+      // by the time this listener fires.
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[ResultsScene] gamepad cleanup threw:', e);
+      }
       if (this.nuclearTimerId !== null) {
         window.clearTimeout(this.nuclearTimerId);
         this.nuclearTimerId = null;
@@ -404,6 +411,7 @@ export class ResultsScene extends Phaser.Scene {
   private replay(): void {
     if (this.confirming) return;
     this.confirming = true;
+    this.detachGamepadListener();
     // Make sure GameScene's mode honours whatever was set during the run
     // (if the kid switched mode mid-run via M, they'd be back at
     // StartScene anyway — replay only fires from a death, where mode
@@ -424,6 +432,7 @@ export class ResultsScene extends Phaser.Scene {
   private gotoMenu(): void {
     if (this.confirming) return;
     this.confirming = true;
+    this.detachGamepadListener();
     try {
       this.scene.start('StartScene');
     } catch (e) {
@@ -432,6 +441,12 @@ export class ResultsScene extends Phaser.Scene {
       this.confirming = false;
       try { window.location.reload(); } catch { /* nothing left */ }
     }
+  }
+
+  private detachGamepadListener(): void {
+    const gp = this.input.gamepad;
+    if (!gp) return;
+    try { gp.off('down', this.onGamepadDown, this); } catch { /* ignore */ }
   }
 
   private firstStandardPad(): Phaser.Input.Gamepad.Gamepad | undefined {

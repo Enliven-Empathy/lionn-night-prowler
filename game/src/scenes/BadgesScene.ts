@@ -178,7 +178,12 @@ export class BadgesScene extends Phaser.Scene {
     const gp = this.input.gamepad;
     if (gp) gp.on('down', this.onGamepadDown, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[BadgesScene] gamepad cleanup threw:', e);
+      }
     });
   }
 
@@ -267,6 +272,10 @@ export class BadgesScene extends Phaser.Scene {
   private goBack(): void {
     if (this.confirming) return;
     this.confirming = true;
+    const gp = this.input.gamepad;
+    if (gp) {
+      try { gp.off('down', this.onGamepadDown, this); } catch { /* ignore */ }
+    }
     try {
       this.scene.start('StartScene');
     } catch {

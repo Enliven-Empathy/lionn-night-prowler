@@ -155,11 +155,17 @@ export class ModeSelectScene extends Phaser.Scene {
       gp.on('down', this.onGamepadDown, this);
     }
 
-    // Clean up the listener when the scene transitions out, otherwise
-    // the next scene's gamepad input would still trigger this callback
-    // and stomp on its own state.
+    // Clean up the listener when the scene transitions out. try/catch
+    // shields against Phaser's already-disposed input internals during
+    // chained shutdowns — without it a TypeError here bubbles into
+    // step() and kills the RAF loop (the "purple frozen canvas" bug).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[ModeSelectScene] gamepad cleanup threw:', e);
+      }
     });
   }
 

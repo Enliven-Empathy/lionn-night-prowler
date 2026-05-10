@@ -144,7 +144,14 @@ export class UserSelectScene extends Phaser.Scene {
     const gp = this.input.gamepad;
     if (gp) gp.on('down', this.onGamepadDown, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (gp) gp.off('down', this.onGamepadDown, this);
+      // See StartScene.create — try/catch shields against Phaser's
+      // already-nulled internals during chained shutdowns.
+      try {
+        if (gp) gp.off('down', this.onGamepadDown, this);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[UserSelectScene] gamepad cleanup threw:', e);
+      }
     });
   }
 
@@ -299,6 +306,7 @@ export class UserSelectScene extends Phaser.Scene {
     const t = this.tiles[this.focused];
     if (!t) return;
     this.confirming = true;
+    this.detachGamepadListener();
     if (t.kind === 'new') {
       try {
         this.scene.start('NameEntryScene', { returnTo: 'StartScene' });
@@ -321,6 +329,7 @@ export class UserSelectScene extends Phaser.Scene {
     const t = this.tiles[this.focused];
     if (!t || t.kind !== 'user' || !t.user) return;
     this.confirming = true;
+    this.detachGamepadListener();
     try {
       this.scene.start('NameEntryScene', { renameUserId: t.user.id, returnTo: 'UserSelectScene' });
     } catch {
@@ -334,11 +343,18 @@ export class UserSelectScene extends Phaser.Scene {
     // strand the kid in a dead-end with no playable state.
     if (!UserStore.getCurrentUser()) return;
     this.confirming = true;
+    this.detachGamepadListener();
     try {
       this.scene.start('StartScene');
     } catch {
       this.confirming = false;
     }
+  }
+
+  private detachGamepadListener(): void {
+    const gp = this.input.gamepad;
+    if (!gp) return;
+    try { gp.off('down', this.onGamepadDown, this); } catch { /* ignore */ }
   }
 
   private firstStandardPad(): Phaser.Input.Gamepad.Gamepad | undefined {
