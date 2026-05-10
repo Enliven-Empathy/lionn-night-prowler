@@ -3,6 +3,11 @@ import { VIEW } from './core/constants';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { ModeSelectScene } from './scenes/ModeSelectScene';
+import { NameEntryScene } from './scenes/NameEntryScene';
+import { StartScene } from './scenes/StartScene';
+import { UserSelectScene } from './scenes/UserSelectScene';
+import { ResultsScene } from './scenes/ResultsScene';
+import { BadgesScene } from './scenes/BadgesScene';
 import { GameScene } from './scenes/GameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -30,7 +35,17 @@ const config: Phaser.Types.Core.GameConfig = {
   // preserveDrawingBuffer lets external tooling read canvas pixels via
   // drawImage / toDataURL. Tiny perf cost; only enabled in dev.
   render: import.meta.env.DEV ? { preserveDrawingBuffer: true } : undefined,
-  scene: [BootScene, PreloadScene, ModeSelectScene, GameScene],
+  scene: [
+    BootScene,
+    PreloadScene,
+    NameEntryScene,
+    StartScene,
+    UserSelectScene,
+    ModeSelectScene,
+    BadgesScene,
+    GameScene,
+    ResultsScene,
+  ],
 };
 
 const game = new Phaser.Game(config);

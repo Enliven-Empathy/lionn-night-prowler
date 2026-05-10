@@ -38,27 +38,37 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     this.registerLionnAnims();
-    // Mode persistence ladder:
-    //   1. localStorage (survives page reloads — the nuclear auto-restart
-    //      reload, manual refresh, fresh tab on the same origin).
-    //   2. game.registry (survives in-game scene.restart).
-    //   3. Mode picker (first run, or invalid stored value).
-    // The picker remains reachable in-game via the M shortcut. Once the
-    // kid has picked once, restarts and reloads keep them in that mode
-    // until they explicitly change it.
-    let storedMode: 'endless' | 'parkour' | null = null;
+
+    // Routing ladder (most specific first):
+    //   - No saved user           → NameEntryScene  (kid creates a tag)
+    //   - Saved user, mode known  → StartScene      (main menu)
+    //
+    // StartScene reads/writes the mode from localStorage; the picker
+    // (ModeSelectScene) is no longer in the boot path — it's reachable
+    // by hand if needed but the main mode toggle now lives inside
+    // StartScene and ResultsScene.
+    //
+    // Imports are lazy to keep PreloadScene's bundle-load order clean.
+    let hasUser = false;
     try {
-      const raw = window.localStorage.getItem('lionn:mode');
-      if (raw === 'endless' || raw === 'parkour') storedMode = raw;
+      // Inline localStorage check so we don't pull UserStore into the
+      // preload-time critical path. The full UserStore loads on first
+      // call from any scene that uses it.
+      const raw = window.localStorage.getItem('lionn:userstore:v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.currentUserId && parsed.users && parsed.users[parsed.currentUserId]) {
+          hasUser = true;
+        }
+      }
     } catch {
-      // localStorage can throw under privacy modes; fall through to
-      // picker. Try/catch only — no log spam.
+      // privacy mode etc — treat as no user
     }
-    if (storedMode) {
-      this.game.registry.set('mode', storedMode);
-      this.scene.start('GameScene');
+
+    if (hasUser) {
+      this.scene.start('StartScene');
     } else {
-      this.scene.start('ModeSelectScene');
+      this.scene.start('NameEntryScene');
     }
   }
 

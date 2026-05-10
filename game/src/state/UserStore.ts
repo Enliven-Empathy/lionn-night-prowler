@@ -1,0 +1,211 @@
+/**
+ * Per-device user profiles + stat persistence. Smash-Bros-style: any
+ * number of users on the same browser/device, picked by a 3-char tag.
+ * No auth, no privacy boundary — this is a dad-and-kid game.
+ *
+ * Data lives in a single localStorage key as JSON. Schema is versioned
+ * so future migrations can be additive (read-old + write-new).
+ *
+ * On read, an in-memory cache is built lazily and reused across calls.
+ * Every mutating method writes through to localStorage immediately —
+ * we don't batch or defer, because a crash during gameplay shouldn't
+ * lose the just-recorded best score.
+ *
+ * If localStorage is blocked (privacy mode, third-party-cookie blocker
+ * in some embedded contexts) every method falls back to in-memory-only
+ * state. The kid still gets a working session, just no persistence
+ * across reloads.
+ */
+
+const KEY = 'lionn:userstore:v1';
+const SCHEMA_VERSION = 1;
+const TAG_LENGTH = 3;
+
+export type GameMode = 'endless' | 'parkour';
+
+export interface UserProfile {
+  id: string;
+  /** 3-char A-Z tag (Smash Bros style). */
+  tag: string;
+  /** Per-mode best distance in pixel units (the same number GameScene
+   *  uses internally; UI divides by 100 for display in metres). */
+  bestDistance: { endless: number; parkour: number };
+  /** Per-mode best score (orbs collected this run). */
+  bestScore: { endless: number; parkour: number };
+  /** Lifetime run count across all modes. */
+  totalRuns: number;
+  /** Badge unlocks: badge_id → unlocked_at_ms. Phase 2 fills this. */
+  badges: Record<string, number>;
+  /** ms since epoch when the profile was created. */
+  createdAt: number;
+}
+
+export interface RunSummary {
+  mode: GameMode;
+  /** Run distance in pixels, same units as GameScene's internal value. */
+  distance: number;
+  /** Total orbs collected this run. */
+  score: number;
+  /** Used by Phase 2 for the Bone Collector / First Blood badges. */
+  enemiesKilled: number;
+  startedAt: number;
+  endedAt: number;
+}
+
+interface StoreData {
+  schemaVersion: number;
+  currentUserId: string | null;
+  users: Record<string, UserProfile>;
+}
+
+function defaultData(): StoreData {
+  return { schemaVersion: SCHEMA_VERSION, currentUserId: null, users: {} };
+}
+
+let cache: StoreData | null = null;
+
+function readRaw(): StoreData {
+  if (cache) return cache;
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StoreData> | null;
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        parsed.schemaVersion === SCHEMA_VERSION &&
+        parsed.users &&
+        typeof parsed.users === 'object'
+      ) {
+        cache = {
+          schemaVersion: SCHEMA_VERSION,
+          currentUserId: parsed.currentUserId ?? null,
+          users: parsed.users as Record<string, UserProfile>,
+        };
+        return cache;
+      }
+    }
+  } catch {
+    // localStorage blocked or corrupt — fall through to defaults
+  }
+  cache = defaultData();
+  return cache;
+}
+
+function writeRaw(data: StoreData): void {
+  cache = data;
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(data));
+  } catch {
+    // privacy mode etc — in-memory cache survives this session
+  }
+}
+
+/** Sanitise a tag to exactly TAG_LENGTH uppercase letters. Pads with
+ *  'A' on the right; truncates if longer; replaces non-letters with
+ *  'A'. Empty string becomes 'AAA'. */
+function normaliseTag(raw: string): string {
+  let out = '';
+  for (let i = 0; i < raw.length && out.length < TAG_LENGTH; i++) {
+    const c = raw.charCodeAt(i);
+    if (c >= 65 && c <= 90) out += raw[i];
+    else if (c >= 97 && c <= 122) out += String.fromCharCode(c - 32);
+  }
+  while (out.length < TAG_LENGTH) out += 'A';
+  return out;
+}
+
+function makeUserId(): string {
+  return `u_${Date.now().toString(36)}_${Math.floor(Math.random() * 0x1000).toString(36)}`;
+}
+
+export const UserStore = {
+  /** Returns the active profile, or null if no user is selected. */
+  getCurrentUser(): UserProfile | null {
+    const d = readRaw();
+    if (!d.currentUserId) return null;
+    return d.users[d.currentUserId] ?? null;
+  },
+
+  /** Mark `id` as the active user. No-op if the id doesn't exist. */
+  setCurrentUser(id: string): void {
+    const d = readRaw();
+    if (!d.users[id]) return;
+    d.currentUserId = id;
+    writeRaw(d);
+  },
+
+  listUsers(): UserProfile[] {
+    return Object.values(readRaw().users).sort((a, b) => a.createdAt - b.createdAt);
+  },
+
+  hasAnyUser(): boolean {
+    return Object.keys(readRaw().users).length > 0;
+  },
+
+  /** Create a new profile with `tag` (sanitised to 3 uppercase letters)
+   *  and immediately make it the current user. Returns the new profile. */
+  createUser(tag: string): UserProfile {
+    const d = readRaw();
+    const id = makeUserId();
+    const profile: UserProfile = {
+      id,
+      tag: normaliseTag(tag),
+      bestDistance: { endless: 0, parkour: 0 },
+      bestScore: { endless: 0, parkour: 0 },
+      totalRuns: 0,
+      badges: {},
+      createdAt: Date.now(),
+    };
+    d.users[id] = profile;
+    d.currentUserId = id;
+    writeRaw(d);
+    return profile;
+  },
+
+  /** Apply a finished run to the current user. Returns whether either
+   *  best was beaten so the ResultsScene can show "NEW BEST" callouts. */
+  recordRun(summary: RunSummary): { isNewBestDistance: boolean; isNewBestScore: boolean } {
+    const d = readRaw();
+    if (!d.currentUserId) return { isNewBestDistance: false, isNewBestScore: false };
+    const u = d.users[d.currentUserId];
+    if (!u) return { isNewBestDistance: false, isNewBestScore: false };
+
+    const distFloor = Math.max(0, Math.floor(summary.distance));
+    const isNewBestDistance = distFloor > (u.bestDistance[summary.mode] ?? 0);
+    const isNewBestScore = summary.score > (u.bestScore[summary.mode] ?? 0);
+
+    if (isNewBestDistance) u.bestDistance[summary.mode] = distFloor;
+    if (isNewBestScore) u.bestScore[summary.mode] = summary.score;
+    u.totalRuns += 1;
+
+    writeRaw(d);
+    return { isNewBestDistance, isNewBestScore };
+  },
+
+  /** Update an existing user's tag (rename). No-op if id missing. */
+  renameUser(id: string, newTag: string): void {
+    const d = readRaw();
+    const u = d.users[id];
+    if (!u) return;
+    u.tag = normaliseTag(newTag);
+    writeRaw(d);
+  },
+
+  /** Delete a user. If they were the current user, currentUserId is
+   *  cleared (the next scene transition picks up the no-user fallback
+   *  and routes to the user select / name entry screen). */
+  deleteUser(id: string): void {
+    const d = readRaw();
+    if (!d.users[id]) return;
+    delete d.users[id];
+    if (d.currentUserId === id) d.currentUserId = null;
+    writeRaw(d);
+  },
+
+  /** For tests/debug only — wipes all data. */
+  __resetForTests(): void {
+    cache = defaultData();
+    try { window.localStorage.removeItem(KEY); } catch { /* ignore */ }
+  },
+};
