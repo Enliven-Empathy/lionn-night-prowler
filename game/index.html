@@ -18,18 +18,26 @@
         height: 100%;
       }
       body {
+        min-height: 100vh;
+        overflow: hidden;
+      }
+      /* Game container fills the viewport so Phaser's CENTER_BOTH scaling
+         centers the canvas against the full window — not against a
+         shrink-wrapped div. Fixes the asymmetric letterbox the bug
+         report flagged on Mac viewports. */
+      #game {
+        position: fixed;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 100vh;
-      }
-      #game {
-        box-shadow: 0 0 80px rgba(120, 40, 200, 0.25);
-        border-radius: 4px;
-        overflow: hidden;
+        background: #07060c;
       }
       canvas {
         display: block;
+        box-shadow: 0 0 80px rgba(120, 40, 200, 0.25);
+        border-radius: 4px;
+        outline: none;
       }
     </style>
   </head>

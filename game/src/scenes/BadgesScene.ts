@@ -83,8 +83,8 @@ export class BadgesScene extends Phaser.Scene {
 
     // Tile grid.
     const tileW = 220;
-    const tileH = 100;
-    const gap = 16;
+    const tileH = 110;
+    const gap = 14;
     const rowW = tileW * TILES_PER_ROW + gap * (TILES_PER_ROW - 1);
     const startX = (VIEW.width - rowW) / 2;
     const startY = 180;
@@ -121,15 +121,27 @@ export class BadgesScene extends Phaser.Scene {
       const ribbon = this.add.rectangle(cx, cy - tileH / 2 + 8, tileW - 24, 6, tier.border, unlocked ? 1 : 0.3);
       ribbon.setDepth(6);
 
-      this.add.text(cx, cy - 8, b.name.toUpperCase(), {
+      this.add.text(cx, cy - 22, b.name.toUpperCase(), {
         fontFamily: 'Cinzel, Georgia, serif',
-        fontSize: '20px',
-        color: unlocked ? tier.text : '#5a4a78',
+        fontSize: '18px',
+        color: unlocked ? tier.text : '#7a6a98',
       }).setOrigin(0.5).setDepth(6);
 
-      this.add.text(cx, cy + 24, unlocked ? 'unlocked' : 'locked', {
+      // Description teaser on the tile itself — dimmed for locked badges
+      // so the kid sees the goal without needing to scrub focus through
+      // every tile to read the bottom panel. Wrapped to two lines if it
+      // overflows.
+      this.add.text(cx, cy + 12, b.description, {
         fontFamily: 'Cinzel, Georgia, serif',
-        fontSize: '12px',
+        fontSize: '11px',
+        color: unlocked ? tier.text : '#5a4a78',
+        align: 'center',
+        wordWrap: { width: tileW - 24 },
+      }).setOrigin(0.5).setDepth(6);
+
+      this.add.text(cx, cy + tileH / 2 - 14, unlocked ? '✓ unlocked' : '— locked —', {
+        fontFamily: 'Cinzel, Georgia, serif',
+        fontSize: '11px',
         color: unlocked ? tier.text : '#5a4a78',
       }).setOrigin(0.5).setDepth(6);
 

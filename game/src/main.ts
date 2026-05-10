@@ -62,6 +62,15 @@ const config: Phaser.Types.Core.GameConfig = {
         Phaser.Input.Keyboard.KeyCodes.THREE,
         Phaser.Input.Keyboard.KeyCodes.FOUR,
         Phaser.Input.Keyboard.KeyCodes.FIVE,
+        // F3 toggles the in-game debug overlay. Without capture, Chrome
+        // intercepts F3 (some browsers map it to "find next") and the
+        // overlay key never reaches Phaser.
+        Phaser.Input.Keyboard.KeyCodes.F3,
+        // F-keys for hitbox/gamepad toggles (G, H below) only need
+        // capture so they're not consumed by extensions; G+H are plain
+        // letters so they capture cleanly.
+        Phaser.Input.Keyboard.KeyCodes.G,
+        Phaser.Input.Keyboard.KeyCodes.H,
       ],
     },
   },
