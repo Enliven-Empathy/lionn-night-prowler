@@ -259,11 +259,16 @@ export class GameScene extends Phaser.Scene {
     this.hpBar = new HealthBar(this, 24, 96);
     this.hpBar.set(this.player.hp, this.player.maxHp);
 
-    // Mode badge (top-left, above HP). Tells the kid which mode they're
-    // in at a glance and reminds them of the M-to-switch shortcut.
+    // Mode + user badge (top-left, above HP). Tells the kid which mode
+    // they're in, which profile is logged in (so a shared device shows
+    // whose run it is), and the M-to-switch shortcut. UserStore.get
+    // returns null on edge-case boots without a profile — fallback to
+    // "—" so the line still renders rather than breaking.
     const modeLabel = this.mode === 'parkour' ? 'PARKOUR' : 'ENDLESS';
     const modeColor = this.mode === 'parkour' ? '#b47bff' : '#c4b8e8';
-    this.add.text(24, 64, `${modeLabel}  ·  M to switch`, {
+    const currentUser = UserStore.getCurrentUser();
+    const userTag = currentUser ? currentUser.tag : '—';
+    this.add.text(24, 64, `${modeLabel}  ·  ${userTag}  ·  M menu`, {
       fontFamily: 'Cinzel, Georgia, serif',
       fontSize: '14px',
       color: modeColor,
