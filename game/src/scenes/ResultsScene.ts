@@ -97,6 +97,7 @@ export class ResultsScene extends Phaser.Scene {
         wallJumps: 0,
         ledgeClimbs: 0,
         bossesKilled: 0,
+        bossIdsKilled: [],
         startedAt: Date.now(),
         endedAt: Date.now(),
       };

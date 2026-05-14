@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, OVERHANG, PLAYER, SPIKES, VIEW, WALL_TOWER } from '../core/constants';
+import { BOSS_MAJORS } from '../state/Bosses';
 
 const CHUNK_WIDTH = 640;
 const GROUND_TOP_Y = 640;
@@ -41,11 +42,16 @@ export interface EnemySpawn {
   /** Patrol horizontal bounds — enemy reverses at these. */
   xMin: number;
   xMax: number;
-  /** Bigger, tougher patrol — see Patrol's isBoss flag. Spawned
-   *  occasionally on wide-ground chunks past chunk 8 in endless mode.
-   *  Defeating one drops a bonus tier-3 reward and unlocks the
-   *  Night Slayer badge. */
-  isBoss?: boolean;
+  /** BossDef id, or undefined for a regular patrol. GameScene looks
+   *  this up in state/Bosses.ts (findBossById) and passes the def to
+   *  the Patrol constructor.
+   *
+   *  - 'minor'           — random tougher patrol (chunk >= 8, 25% roll).
+   *  - 'shadow_stalker'  — fixed at chunk 5.
+   *  - 'crimson_beast'   — fixed at chunk 12.
+   *  - 'night_sovereign' — fixed at chunk 22.
+   *  See state/Bosses.ts for the full catalogue. */
+  bossId?: string;
 }
 
 export interface CollectibleSpawn {
@@ -562,11 +568,39 @@ export class EndlessLevel {
    * then ~35-65% chance afterwards.
    */
   private pickEnemySpawn(segments: Segment[], index: number): EnemySpawn | null {
+    // ─── Major boss milestone check ──────────────────────────────────
+    // If this chunk index matches one of the named endbosses' fixed
+    // milestones (state/Bosses.ts), force that boss to spawn — no
+    // RNG roll, no probability gate. The kid encounters Shadow Stalker
+    // / Crimson Beast / Night Sovereign at deterministic distances
+    // every run.
+    const major = BOSS_MAJORS.find((b) => b.endlessChunkIndex === index);
+    if (major) {
+      // Pick the widest ground segment so the bigger body has room.
+      const wide = segments.filter((s) => s.kind === 'ground' && s.w >= 320);
+      const pick = wide.sort((a, b) => b.w - a.w)[0]
+        ?? segments.filter((s) => s.kind === 'ground').sort((a, b) => b.w - a.w)[0];
+      if (pick) {
+        const buffer = 36; // wider buffer for bigger body
+        const xMin = pick.x + buffer;
+        const xMax = pick.x + pick.w - buffer;
+        return {
+          x: (xMin + xMax) / 2,
+          y: pick.y - 36 * major.scale, // raise spawn so feet rest on ground for scaled body
+          xMin,
+          xMax,
+          bossId: major.id,
+        };
+      }
+      // Fallthrough to normal spawn if no eligible ground (shouldn't
+      // happen with the standard procedural generator, but defensive).
+    }
+
+    // ─── Normal patrol / minor-boss roll ─────────────────────────────
     const difficulty = Math.min(index / 14, 1);
     const chance = 0.30 + difficulty * 0.35;
     if (this.rng() > chance) return null;
 
-    // Find ground segments wide enough to patrol on. Skip platforms/walls.
     const candidates = segments.filter((s) => s.kind === 'ground' && s.w >= 180);
     if (candidates.length === 0) return null;
 
@@ -576,19 +610,16 @@ export class EndlessLevel {
     const xMax = pick.x + pick.w - buffer;
     const groundTop = pick.y;
 
-    // Boss roll: 25% chance on chunks past index 8, but ONLY on
-    // wide-enough ground segments (≥ 280 px) so the bigger body has
-    // room to patrol without immediately walking off the edge. Bosses
-    // are a special encounter, not a guaranteed every-Nth-chunk
-    // appearance — keeps them feeling earned.
-    const isBoss = index >= 8 && pick.w >= 280 && this.rng() < 0.25;
+    // Minor boss roll: 25% chance on chunks past index 8, wide-ground
+    // only. Feels earned via RNG rather than scheduled.
+    const isMinorBoss = index >= 8 && pick.w >= 280 && this.rng() < 0.25;
 
     return {
       x: (xMin + xMax) / 2,
-      y: groundTop - 36, // body half-height; sits on ground
+      y: groundTop - 36,
       xMin,
       xMax,
-      isBoss,
+      bossId: isMinorBoss ? 'minor' : undefined,
     };
   }
 

@@ -11,6 +11,7 @@ import { SlidePole } from '../entities/SlidePole';
 import { EndlessLevel, EndlessLevelHandle } from '../levels/EndlessLevel';
 import { ParkourLevel } from '../levels/ParkourLevel';
 import { RunSummary, UserStore } from '../state/UserStore';
+import { BossDef, findBossById } from '../state/Bosses';
 
 type GameMode = 'endless' | 'parkour';
 import { OVERHANG, SPIKES } from '../core/constants';
@@ -117,6 +118,10 @@ export class GameScene extends Phaser.Scene {
    *  matches a Patrol with isBoss=true. Used by the Night Slayer badge
    *  + the bonus tier-3 reward drop. */
   private runBossesKilled = 0;
+  /** Per-run set of unique boss ids defeated. Drives the boss-specific
+   *  badges (boss_shadow_stalker / boss_crimson_beast /
+   *  boss_night_sovereign) and survives into the RunSummary. */
+  private runBossIdsKilled: string[] = [];
   private scoreText!: Phaser.GameObjects.Text;
   private bestScoreText!: Phaser.GameObjects.Text;
 
@@ -148,6 +153,7 @@ export class GameScene extends Phaser.Scene {
     this.runStartedAt = Date.now();
     this.runEnemiesKilled = 0;
     this.runBossesKilled = 0;
+    this.runBossIdsKilled = [];
     this.endedAtWall = -Infinity;
     this.autoRestartFired = false;
     if (this.autoRestartTimerId !== null) {
@@ -185,14 +191,18 @@ export class GameScene extends Phaser.Scene {
       if (!target.isAlive()) {
         this.runEnemiesKilled += 1;
         // Boss-killed detection. Look up the patrol whose combatant
-        // id matches the killed target; if it was a boss, count it
-        // and drop a bonus reward at its position. The Night Slayer
-        // badge unlocks via UserStore.recordRun reading the
-        // RunSummary.bossesKilled count.
+        // id matches the killed target; if it was a boss, count it,
+        // record its id for the per-boss badges, and drop the def's
+        // configured reward count + an extra-emphatic flash for the
+        // major endbosses.
         const killedPatrol = this.patrols.find((p) => p.combatant.id === target.id);
-        if (killedPatrol && killedPatrol.isBoss) {
+        if (killedPatrol && killedPatrol.bossDef) {
+          const def = killedPatrol.bossDef;
           this.runBossesKilled += 1;
-          this.spawnBossReward(killedPatrol.sprite.x, killedPatrol.sprite.y);
+          if (!this.runBossIdsKilled.includes(def.id)) {
+            this.runBossIdsKilled.push(def.id);
+          }
+          this.spawnBossReward(killedPatrol.sprite.x, killedPatrol.sprite.y, def);
         }
       }
     });
@@ -618,6 +628,7 @@ export class GameScene extends Phaser.Scene {
         wallJumps: this.player.runStats.wallJumps,
         ledgeClimbs: this.player.runStats.ledgeClimbs,
         bossesKilled: this.runBossesKilled,
+        bossIdsKilled: this.runBossIdsKilled.slice(),
         startedAt: this.runStartedAt,
         endedAt: Date.now(),
       };
@@ -691,6 +702,7 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < spawns.length; i++) {
       const s = spawns[i];
       const variant = variants[i] ?? 'patrol';
+      const bossDef = s.bossId ? findBossById(s.bossId) ?? null : null;
       const p = new Patrol(
         this,
         s.x,
@@ -702,7 +714,7 @@ export class GameScene extends Phaser.Scene {
         this.audio,
         (footX, footY) => this.patrolStepHazardous(footX, footY),
         variant,
-        s.isBoss ?? false,
+        bossDef,
       );
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
@@ -778,16 +790,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Spawn a tier-3 reward orb at the position of a defeated boss + a
-   * small camera flash so the kid feels the kill landed. Doesn't go
-   * through the level handle (level didn't author this orb — the kill
-   * earned it dynamically).
+   * Spawn the boss's configured reward orbs at its position + a flash
+   * + shake. The orb count comes from the BossDef (1 for minor, 2 for
+   * Shadow Stalker / Crimson Beast, 3 for Night Sovereign) and they
+   * fan out horizontally so all are visible. Flash colour shifts to
+   * the boss's stroke so the kill reads as palette-themed.
    */
-  private spawnBossReward(x: number, y: number): void {
-    this.collectibles.push(new Collectible(this, x, y - 32, 3));
+  private spawnBossReward(x: number, y: number, def: BossDef): void {
+    const count = def.rewardCount;
+    for (let i = 0; i < count; i++) {
+      const offsetX = count === 1 ? 0 : (i - (count - 1) / 2) * 36;
+      this.collectibles.push(new Collectible(this, x + offsetX, y - 36, 3));
+    }
     try {
-      this.cameras.main.flash(220, 255, 200, 80, false);
-      this.fx.shake(180, 0.012);
+      // Decompose the stroke colour to RGB for the camera flash so each
+      // boss has a distinctly tinted explosion.
+      const r = (def.stroke >> 16) & 0xff;
+      const g = (def.stroke >> 8) & 0xff;
+      const b = def.stroke & 0xff;
+      this.cameras.main.flash(260, r, g, b, false);
+      this.fx.shake(220, 0.015);
     } catch {
       // FX is non-critical; never let it break the run.
     }

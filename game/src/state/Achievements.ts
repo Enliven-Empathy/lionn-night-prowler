@@ -110,6 +110,31 @@ export const BADGES: BadgeDef[] = [
     tier: 'rare',
     trigger: (r) => r.bossesKilled >= 1,
   },
+  // Per-boss badges for the three named endbosses. Each fires the FIRST
+  // time the kid downs that specific boss. Tier escalates so the badge
+  // gallery shows the progression visually (gold → rare → gold-with-
+  // gold edge for the final).
+  {
+    id: 'boss_shadow_stalker',
+    name: 'Shadow Slayer',
+    description: 'Defeat the Shadow Stalker.',
+    tier: 'silver',
+    trigger: (r) => r.bossIdsKilled.includes('shadow_stalker'),
+  },
+  {
+    id: 'boss_crimson_beast',
+    name: 'Crimson Tamer',
+    description: 'Defeat the Crimson Beast.',
+    tier: 'gold',
+    trigger: (r) => r.bossIdsKilled.includes('crimson_beast'),
+  },
+  {
+    id: 'boss_night_sovereign',
+    name: 'Sovereign Breaker',
+    description: 'Defeat the Night Sovereign.',
+    tier: 'rare',
+    trigger: (r) => r.bossIdsKilled.includes('night_sovereign'),
+  },
 ];
 
 /** Quick lookup by id. Useful for ResultsScene + BadgesScene rendering. */

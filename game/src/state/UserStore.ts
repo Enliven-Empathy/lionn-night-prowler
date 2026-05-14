@@ -57,9 +57,13 @@ export interface RunSummary {
   /** Successful ledge climbs this run. Counted when climbLedge fires.
    *  Used by Climber badge. */
   ledgeClimbs: number;
-  /** Bosses defeated this run. A boss is a Patrol spawned with
-   *  isBoss=true (1.5x size, 8 HP). Used by the Night Slayer badge. */
+  /** Total bosses defeated this run (counts every boss, major or
+   *  minor). Used by the Night Slayer badge. */
   bossesKilled: number;
+  /** Unique boss ids defeated this run — drives the per-boss badges
+   *  (boss_shadow_stalker, boss_crimson_beast, boss_night_sovereign).
+   *  Order = first-kill order. Empty array = no bosses defeated. */
+  bossIdsKilled: string[];
   startedAt: number;
   endedAt: number;
 }
