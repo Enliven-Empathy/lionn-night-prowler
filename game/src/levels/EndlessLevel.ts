@@ -277,8 +277,22 @@ export class EndlessLevel {
     let segments: Segment[];
     let isWallTower = false;
 
+    // Some bosses need a flat arena (no pits, no decorations) so the
+    // kid has room to fight. The needsFlatArena flag on the boss def
+    // forces this chunk to use the spawn-chunk layout instead of
+    // procedural. The Night Sovereign at chunk 22 currently uses this.
+    const bossNeedingArena = BOSS_MAJORS.find(
+      (b) => b.endlessChunkIndex === index && b.needsFlatArena,
+    );
+
     if (index === 0) {
       segments = this.layoutSpawnChunk(x0);
+    } else if (bossNeedingArena) {
+      segments = this.layoutSpawnChunk(x0);
+      // Skip the scatter pass for collectibles + heart + spike spawn —
+      // pickEnemySpawn will still place the boss, and the boss's drop
+      // is the reward. A clean arena reads better.
+      this.skipScatterForCurrentChunk = true;
     } else if (this.shouldSpawnWallTower(index)) {
       segments = this.layoutWallTowerChunk(x0);
       isWallTower = true;
@@ -329,6 +343,11 @@ export class EndlessLevel {
     if (index >= 1 && !this.skipScatterForCurrentChunk) {
       this.scatterCollectibles(segments, index);
     }
+
+    // Boss-arena chunks skip all scatter passes — the kid needs a
+    // clean fighting space without spikes / overhangs / hearts to
+    // distract from the encounter.
+    if (this.skipScatterForCurrentChunk) return;
 
     // Hearts: rare HP pickups, never on the very first chunks.
     if (index >= 3) {

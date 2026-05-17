@@ -17,7 +17,10 @@ const FILL_PATROL = 0x3a2a55;
 const FILL_CHASE = 0x5a3a85;
 const FILL_HURT = 0xff8caf;
 const FILL_DEAD = 0x140a1f;
+const FILL_DIZZY = 0x8ad4e0;        // ice-blue overlay — reads as "stunned"
 const STROKE = 0x9b59ff;
+const DIZZY_DURATION_MS = 2000;     // dash/pound → 2s vulnerability window
+const DIZZY_IMMUNE_FLASH_MS = 80;   // brief flash when a blocked claw "no-effects"
 
 const DETECT_X = 280;
 const DETECT_Y = 120;
@@ -109,6 +112,11 @@ export class Patrol {
    *  in front of a danger zone (which looked twitchy on screen). */
   private hazardWaitUntilMs = 0;
   private variant: PatrolVariant = 'patrol';
+  /** Scene-time ms until which the patrol is dizzy. While dizzy: AI
+   *  freezes (vx → 0), no chase, no attack; takeDamage applies normal
+   *  damage; visual tint shifts to ice-blue. Set by takeDamage when
+   *  attackName === 'dash' | 'pound_impact'. */
+  private dizzyUntilMs = 0;
 
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
@@ -228,6 +236,18 @@ export class Patrol {
 
     const idleFill = this.bossDef ? this.bossDef.fill : FILL_PATROL;
     const chaseFill = this.bossDef ? this.bossDef.chaseFill : FILL_CHASE;
+    const dizzy = this.isDizzy(timeMs);
+
+    // Dizzy state: AI freezes, vx decays to 0, ice-blue tint shows
+    // the kid this enemy is now vulnerable. Slash-immune bosses
+    // (Night Sovereign) take normal claw damage during this window.
+    if (dizzy) {
+      this.aiState = 'hurt';
+      this.sprite.fillColor = timeMs < this.flashUntil ? FILL_HURT : FILL_DIZZY;
+      this.body.setVelocityX(this.body.velocity.x * 0.7);
+      this.maybeUpdateAttack(timeMs);
+      return;
+    }
 
     if (timeMs < this.hurtUntil) {
       // Stunned by recent hit; physics carries the knockback.
@@ -364,8 +384,49 @@ export class Patrol {
     this.hitbox.drawDebug();
   }
 
+  /** True iff this patrol is currently dizzy (stunned + vulnerable). */
+  isDizzy(timeMs: number): boolean {
+    return timeMs < this.dizzyUntilMs;
+  }
+
+  /** Apply or extend the dizzy state. Auto-called from takeDamage when
+   *  the incoming attack is a dash or ground pound; can also be called
+   *  externally by GameScene (e.g. pound AOE that doesn't go through
+   *  the patrol's own takeDamage). Idempotent; takes the longer of
+   *  current vs new expiry. */
+  applyDizzy(durationMs: number, timeMs: number): void {
+    if (this.hp <= 0) return;
+    this.dizzyUntilMs = Math.max(this.dizzyUntilMs, timeMs + durationMs);
+  }
+
   takeDamage(event: DamageEvent, timeMs: number): void {
     if (this.hp <= 0) return;
+
+    // Dash and ground-pound impacts always apply dizzy on hit. This is
+    // the new universal mechanic — works on every enemy, opens the
+    // damage window required by slash-immune bosses (Night Sovereign).
+    const isDashOrPound =
+      event.attackName === 'dash' || event.attackName === 'pound_impact';
+    if (isDashOrPound) {
+      this.applyDizzy(DIZZY_DURATION_MS, timeMs);
+    }
+
+    // Slash-immune-when-alert gate (final boss). Claw / regular attacks
+    // bounce off unless the boss is currently dizzy. Dash and pound
+    // bypass — they're how the kid OPENS the dizzy window. Blocked
+    // hits still play a brief flash so the kid sees the "no effect"
+    // feedback without an HP change.
+    if (
+      this.bossDef?.slashImmuneWhenAlert &&
+      !this.isDizzy(timeMs) &&
+      !isDashOrPound
+    ) {
+      this.flashUntil = timeMs + DIZZY_IMMUNE_FLASH_MS;
+      try { this.audio.play(SFX.ENEMY_HURT); } catch { /* swallow */ }
+      // Don't apply damage / knockback / hurt-stun. Hit was deflected.
+      return;
+    }
+
     this.hp = Math.max(0, this.hp - event.damage);
     this.flashUntil = timeMs + 110;
     this.hurtUntil = timeMs + 220;

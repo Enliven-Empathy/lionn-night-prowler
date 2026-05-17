@@ -122,6 +122,11 @@ export class GameScene extends Phaser.Scene {
    *  badges (boss_shadow_stalker / boss_crimson_beast /
    *  boss_night_sovereign) and survives into the RunSummary. */
   private runBossIdsKilled: string[] = [];
+  /** Combatant ids hit by the CURRENT dash activation. Cleared on the
+   *  rising edge of snap.dashing so each dash deals a single damage
+   *  event per target, not one per frame of overlap. */
+  private dashHitIds = new Set<number>();
+  private wasPlayerDashing = false;
   private scoreText!: Phaser.GameObjects.Text;
   private bestScoreText!: Phaser.GameObjects.Text;
 
@@ -478,6 +483,45 @@ export class GameScene extends Phaser.Scene {
         alive: !this.player.isDead(),
       };
       for (const p of this.patrols) p.update(timeMs, dtSec, target);
+
+      // Dash-vs-patrol collision. The dash is movement, not an attack
+      // through the hitbox system, so we AABB-test the player's hurtbox
+      // against each patrol's hurtbox while snap.dashing is true and
+      // fire a takeDamage event with attackName='dash'. Patrol's
+      // takeDamage auto-applies the dizzy state for any dash hit (the
+      // universal "make dizzy" mechanic the player relies on to crack
+      // the slash-immune Night Sovereign open).
+      //
+      // dashHitIds tracks targets hit by THIS activation so a sustained
+      // overlap doesn't deal damage every frame — one event per dash
+      // per target.
+      const snap = this.player.getMovementSnapshot(timeMs);
+      if (snap.dashing && !this.wasPlayerDashing) this.dashHitIds.clear();
+      if (snap.dashing && !this.player.isDead()) {
+        const playerRect = this.player.hurtbox();
+        for (const p of this.patrols) {
+          if (!p.isAlive() || p.isGrabbed() || p.isThrown()) continue;
+          if (this.dashHitIds.has(p.combatant.id)) continue;
+          const patrolRect = p.combatant.hurtbox();
+          if (!patrolRect) continue;
+          if (!Phaser.Geom.Intersects.RectangleToRectangle(playerRect, patrolRect)) continue;
+          this.dashHitIds.add(p.combatant.id);
+          p.takeDamage(
+            {
+              damage: 1,
+              fromX: this.player.sprite.x,
+              fromY: this.player.sprite.y,
+              knockbackX: 220,
+              knockbackY: -140,
+              hitstopMs: 70,
+              attackName: 'dash',
+              team: 'player',
+            },
+            timeMs,
+          );
+        }
+      }
+      this.wasPlayerDashing = snap.dashing;
 
       // Thrown-patrol damage: any thrown patrol that overlaps another
       // patrol deals damage. Quadratic in patrol count but the count is
