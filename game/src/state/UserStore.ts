@@ -208,6 +208,21 @@ export const UserStore = {
       return { isNewBestDistance: false, isNewBestScore: false, newlyUnlockedBadges: [] };
     }
 
+    // Empty-run gate: if the kid died before doing ANYTHING (under
+    // 50 px of distance, no orbs, no kills), don't count it. Drops
+    // into ResultsScene with zeros displayed but totalRuns + bests
+    // are unchanged so accidental pit-deaths off the spawn don't
+    // inflate stats. Threshold tuned generously so a single jump
+    // before death still records — only truly trivial flubs are
+    // dropped.
+    const isEmptyRun =
+      summary.distance < 50 &&
+      summary.score === 0 &&
+      summary.enemiesKilled === 0;
+    if (isEmptyRun) {
+      return { isNewBestDistance: false, isNewBestScore: false, newlyUnlockedBadges: [] };
+    }
+
     const distFloor = Math.max(0, Math.floor(summary.distance));
     const isNewBestDistance = distFloor > (u.bestDistance[summary.mode] ?? 0);
     const isNewBestScore = summary.score > (u.bestScore[summary.mode] ?? 0);

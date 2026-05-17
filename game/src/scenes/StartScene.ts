@@ -122,11 +122,16 @@ export class StartScene extends Phaser.Scene {
       color: '#9b8fb8',
     }).setOrigin(0.5).setDepth(10);
 
-    // Action list — centered column of rectangles.
+    // Action list — centered column of rectangles. Gap was 12 px,
+    // bumped to 18 so the kid has a wider visual cushion between
+    // buttons (with FIT scaling on Mac viewports a click near the
+    // edge of one button can land on the next if the gap is too
+    // narrow). Buttons get a 4 px stroke that extends ~2 px outside
+    // their bounds, so the effective hit-area gap is ~14 px now.
     const actionW = 360;
-    const actionH = 52;
-    const gap = 12;
-    const startY = 270;
+    const actionH = 48;
+    const gap = 18;
+    const startY = 256;
     const cx = VIEW.width / 2;
 
     this.actions = [

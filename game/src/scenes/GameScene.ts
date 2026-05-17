@@ -135,11 +135,42 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(): void {
-    // Carry across restarts via the registry (Phaser's persistent kv store).
-    this.bestDistance = this.game.registry.get('bestDistance') ?? 0;
-    this.bestScore = this.game.registry.get('bestScore') ?? 0;
-    const storedMode = this.game.registry.get('mode');
-    this.mode = storedMode === 'parkour' ? 'parkour' : 'endless';
+    // Mode comes from the registry (set by StartScene's pre-launch
+    // path); fall back to localStorage for nuclear-reload paths, then
+    // to 'endless' as the safe default.
+    let mode: 'endless' | 'parkour' = 'endless';
+    const reg = this.game.registry.get('mode');
+    if (reg === 'parkour' || reg === 'endless') {
+      mode = reg;
+    } else {
+      try {
+        const stored = window.localStorage.getItem('lionn:mode');
+        if (stored === 'parkour' || stored === 'endless') mode = stored;
+      } catch { /* privacy-mode browsers */ }
+    }
+    this.mode = mode;
+
+    // Mirror current mode back to localStorage so a watchdog reload
+    // mid-run lands on the SAME mode the kid was playing — fixes the
+    // "blank then back to endless" symptom from the bug report.
+    try { window.localStorage.setItem('lionn:mode', mode); } catch { /* ignore */ }
+
+    // Best distance/score now come from the active UserProfile per-mode
+    // (UserStore) rather than from the registry. The registry was
+    // shared across modes + reset on page reload, so the in-game HUD
+    // showed 0 even when the user's parkour best was 132 m.
+    const u = UserStore.getCurrentUser();
+    if (u) {
+      this.bestDistance = u.bestDistance[mode] ?? 0;
+      this.bestScore = u.bestScore[mode] ?? 0;
+    } else {
+      this.bestDistance = this.game.registry.get('bestDistance') ?? 0;
+      this.bestScore = this.game.registry.get('bestScore') ?? 0;
+    }
+    // Keep the registry in sync so the rest of the scene (which still
+    // reads .bestDistance directly) sees the right number.
+    this.game.registry.set('bestDistance', this.bestDistance);
+    this.game.registry.set('bestScore', this.bestScore);
   }
 
   create(): void {
@@ -366,6 +397,18 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-G', () => {
       this.gamepadDebug.toggle();
     });
+    // F3 was previously toggled via the polled controls.held('debugToggle')
+    // path with a 250 ms debounce — that fires on rising-edge fine in
+    // theory but had been reported as unresponsive. Switching to the
+    // same event-based handler as G and H makes the three legend keys
+    // behave consistently and avoids the polling timing-window
+    // sensitivity entirely.
+    this.input.keyboard?.on('keydown-F3', (e: KeyboardEvent) => {
+      // Block Chrome's default F3 binding (some platforms map F3 to
+      // "Find next") so the keypress reaches us alone.
+      try { e.preventDefault(); } catch { /* ignore */ }
+      this.debugOverlay.toggle();
+    });
 
     // Window-level event listeners — kept on instance so SHUTDOWN can
     // remove them. Without that, every scene.restart() leaks a new copy
@@ -409,10 +452,9 @@ export class GameScene extends Phaser.Scene {
     const dtSec = dtMs / 1000;
     this.controls.update(timeMs);
 
-    if (this.controls.held('debugToggle') && timeMs - this.debugLastToggleAt > 250) {
-      this.debugOverlay.toggle();
-      this.debugLastToggleAt = timeMs;
-    }
+    // F3 debug toggle is now handled in create() via keyboard.on(
+    // 'keydown-F3'). Polled path retired — see B7 in the bug fixes.
+    void this.debugLastToggleAt;
 
     // M to bail back to the main menu (StartScene). Rising-edge tracked
     // so a held key only fires once. Cached key — addKey is unsafe to
@@ -1017,6 +1059,10 @@ export class GameScene extends Phaser.Scene {
       ease: 'Quad.easeOut',
       onComplete: () => popup.destroy(),
     });
+    // Wall-clock hard-kill mirror of the +N popup in collectPickup.
+    window.setTimeout(() => {
+      if (popup.active) popup.destroy();
+    }, 1500);
 
     // Brief HP-bar bump so the heal reads in the HUD too.
     this.hpBar.set(this.player.hp, this.player.maxHp);
@@ -1058,6 +1104,14 @@ export class GameScene extends Phaser.Scene {
       ease: 'Quad.easeOut',
       onComplete: () => popup.destroy(),
     });
+    // Hard wall-clock kill — defends against the popup lingering when
+    // Phaser's tween manager stalls (e.g. tab visibility-change while
+    // the tween is running, or any other scene-time hiccup). Without
+    // this, the +1 was observed hanging in the air for 6-8 s even
+    // though the tween's onComplete should fire at +700 ms.
+    window.setTimeout(() => {
+      if (popup.active) popup.destroy();
+    }, 1500);
   }
 
   private cullPatrols(): void {

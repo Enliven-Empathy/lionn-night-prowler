@@ -165,7 +165,7 @@ export class NameEntryScene extends Phaser.Scene {
 
     // Hint.
     this.add.text(VIEW.width / 2, VIEW.height - 60,
-      'LEFT/RIGHT pick slot  |  UP/DOWN cycle letter  |  SPACE / ENTER / X confirm',
+      'LEFT/RIGHT pick slot  |  UP/DOWN cycle letter  |  SPACE / ENTER / X confirm  |  ESC / O cancel',
       {
         fontFamily: 'Cinzel, Georgia, serif',
         fontSize: '14px',
@@ -325,10 +325,17 @@ export class NameEntryScene extends Phaser.Scene {
   }
 
   private cancel(): void {
-    // Cancel only allowed in rename mode — a fresh-launch with no users
-    // can't escape the picker (we'd be stuck without a current user).
-    if (this.mode !== 'rename') return;
     if (this.confirming) return;
+    // Cancel is allowed when:
+    //   - mode === 'rename' (the existing user keeps their tag)
+    //   - mode === 'create' AND there's already at least one user
+    //     (the kid was sent here by mis-clicking CHANGE USER → NEW;
+    //      they can bail back to StartScene without committing a tag).
+    // The only case where cancel is blocked: first launch with no
+    // users yet — we need the kid to commit a tag to have any
+    // playable state at all.
+    const canCancel = this.mode === 'rename' || UserStore.hasAnyUser();
+    if (!canCancel) return;
     this.confirming = true;
     this.detachGamepadListener();
     try {
