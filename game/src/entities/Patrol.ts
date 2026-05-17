@@ -29,6 +29,11 @@ const ATTACK_Y = 44;
 const PATROL_SPEED = 90;
 const CHASE_SPEED = 170;
 const KNOCKBACK_RESIST = 0.55;
+/** Standard patrol HP. Tuned so the kid needs a full 3-hit combo
+ *  (claw_1=1 + claw_2=1 + claw_3=4 = 6) to fell one — single-hit
+ *  finishers don't work. Bumped from 3 (which let claw_3 one-shot
+ *  every patrol and made the standard enemies trivial). */
+const PATROL_HP = 6;
 
 type AIState = 'patrol' | 'chase' | 'attack' | 'hurt' | 'dead' | 'grabbed' | 'thrown';
 
@@ -143,7 +148,7 @@ export class Patrol {
     // in state/Bosses.ts — no Patrol changes needed.
     const w = bossDef ? Math.round(SIZE.w * bossDef.scale) : SIZE.w;
     const h = bossDef ? Math.round(SIZE.h * bossDef.scale) : SIZE.h;
-    this.hp = bossDef ? bossDef.hp : 3;
+    this.hp = bossDef ? bossDef.hp : PATROL_HP;
     this.maxHp = this.hp;
 
     this.sprite = scene.add.rectangle(x, y, w, h, bossDef ? bossDef.fill : FILL_PATROL);
