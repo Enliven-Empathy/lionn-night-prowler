@@ -119,6 +119,53 @@ export const ATTACKS: Record<string, AttackData> = {
     hitbox: { offsetX: 44, offsetY: -8, w: 80, h: 70 },
     fxTag: 'crescent-arc',
   },
+
+  // ─── Boss attacks ────────────────────────────────────────────────
+  // Each major boss uses its own attack profile so the fights have
+  // distinct rhythms. Patrol.update picks the attack via
+  // bossDef.attackName.
+
+  /** Shadow Stalker — fast lunge. Short telegraph, wide reach. */
+  shadow_dash: {
+    name: 'shadow_dash',
+    startupMs: 200,
+    activeMs: 220,
+    recoveryMs: 260,
+    damage: 3,
+    knockbackX: 280,
+    knockbackY: -120,
+    hitstopMs: 90,
+    hitbox: { offsetX: 38, offsetY: -4, w: 84, h: 60 },
+    fxTag: 'crescent-arc',
+  },
+
+  /** Crimson Beast — heavy slam. Long telegraph, big damage, launches up. */
+  crimson_slam: {
+    name: 'crimson_slam',
+    startupMs: 360,
+    activeMs: 180,
+    recoveryMs: 360,
+    damage: 4,
+    knockbackX: 200,
+    knockbackY: -200,
+    hitstopMs: 140,
+    hitbox: { offsetX: 32, offsetY: 6, w: 96, h: 84 },
+    fxTag: 'pounce',
+  },
+
+  /** Night Sovereign — measured heavy strike. Long reach, fast recovery. */
+  sovereign_strike: {
+    name: 'sovereign_strike',
+    startupMs: 260,
+    activeMs: 140,
+    recoveryMs: 280,
+    damage: 4,
+    knockbackX: 240,
+    knockbackY: -150,
+    hitstopMs: 130,
+    hitbox: { offsetX: 44, offsetY: -6, w: 104, h: 80 },
+    fxTag: 'slash-heavy',
+  },
 };
 
 export function getAttack(name: string): AttackData | undefined {

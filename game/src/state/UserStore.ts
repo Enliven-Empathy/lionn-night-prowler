@@ -40,6 +40,10 @@ export interface UserProfile {
   badges: Record<string, number>;
   /** ms since epoch when the profile was created. */
   createdAt: number;
+  /** Cosmetic skin choice. Resolved via state/Skins.getSkin(); falls
+   *  back to the default Lionn if missing or unknown. Optional so
+   *  older saved profiles (v1 schema) keep working without migration. */
+  selectedSkinId?: string;
 }
 
 export interface RunSummary {
@@ -223,6 +227,17 @@ export const UserStore = {
 
     writeRaw(d);
     return { isNewBestDistance, isNewBestScore, newlyUnlockedBadges };
+  },
+
+  /** Set the current user's cosmetic skin id. Looked up by state/Skins
+   *  at render time; unknown ids silently fall back to the default. */
+  setSelectedSkin(skinId: string): void {
+    const d = readRaw();
+    if (!d.currentUserId) return;
+    const u = d.users[d.currentUserId];
+    if (!u) return;
+    u.selectedSkinId = skinId;
+    writeRaw(d);
   },
 
   /** Update an existing user's tag (rename). No-op if id missing. */

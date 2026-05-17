@@ -273,16 +273,23 @@ export class Patrol {
     // only to be ground-pounded — keeps parkour rooms focused on
     // traversal rather than combat. Hazard probe still runs (so they
     // don't walk off platforms) and they still take damage normally.
+    //
+    // Bosses can override AI thresholds via bossDef. Per-boss tuning
+    // gives each major encounter its own rhythm — Shadow Stalker has
+    // wide vision + close-engage, Crimson Beast has slow long-reach
+    // slam, Night Sovereign has the widest vision of all.
+    const detectX = this.bossDef?.detectRangeX ?? DETECT_X;
+    const attackX = this.bossDef?.attackRangeX ?? ATTACK_X;
     const seesPlayer =
       this.variant === 'patrol' &&
       target.alive &&
-      Math.abs(target.x - this.sprite.x) < DETECT_X &&
+      Math.abs(target.x - this.sprite.x) < detectX &&
       Math.abs(target.y - this.sprite.y) < DETECT_Y;
 
     const inAttackRange =
       this.variant === 'patrol' &&
       target.alive &&
-      Math.abs(target.x - this.sprite.x) < ATTACK_X &&
+      Math.abs(target.x - this.sprite.x) < attackX &&
       Math.abs(target.y - this.sprite.y) < ATTACK_Y;
 
     // Mid-attack: do nothing else this tick — let the attack timeline play.
@@ -303,8 +310,10 @@ export class Patrol {
       this.facing = target.x < this.sprite.x ? -1 : 1;
 
       if (inAttackRange) {
-        // Lunge. Use the player's claw_2 stats — feels like a real combat exchange.
-        const a = ATTACKS.claw_2;
+        // Boss-specific attack profile (shadow_dash / crimson_slam /
+        // sovereign_strike) or default to claw_2 for regular patrols.
+        const attackKey = this.bossDef?.attackName ?? 'claw_2';
+        const a = ATTACKS[attackKey] ?? ATTACKS.claw_2;
         this.attack.start(a, timeMs);
         this.cancelLunge?.();
         this.attackFx.telegraph(this.sprite, a.startupMs, 'enemy');
@@ -314,9 +323,12 @@ export class Patrol {
         this.body.setVelocityX(this.facing * 60); // slight forward drift
       } else {
         // Chase but stay within patrol bounds (don't walk off ledge).
+        // Per-boss chase speed lets each major fight have a distinct
+        // tempo (Crimson Beast is a slow brute; Shadow Stalker rushes).
+        const chaseSpeed = this.bossDef?.chaseSpeed ?? CHASE_SPEED;
         let targetVx =
-          this.facing === 1 && this.sprite.x < this.xMax - 10 ? CHASE_SPEED :
-          this.facing === -1 && this.sprite.x > this.xMin + 10 ? -CHASE_SPEED :
+          this.facing === 1 && this.sprite.x < this.xMax - 10 ? chaseSpeed :
+          this.facing === -1 && this.sprite.x > this.xMin + 10 ? -chaseSpeed :
           0;
         // Refuse to step into a pit or active spike row, even mid-chase.
         // Better to lose the player than to walk into spikes.

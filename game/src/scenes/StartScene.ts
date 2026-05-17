@@ -31,7 +31,7 @@ const COL_TEXT = 0xe6deff;
 const COL_TEXT_DIM = 0x9b8fb8;
 
 interface Action {
-  id: 'play' | 'switchMode' | 'changeUser' | 'badges' | 'leaderboard';
+  id: 'play' | 'switchMode' | 'changeUser' | 'badges' | 'leaderboard' | 'skin';
   rect: Phaser.GameObjects.Rectangle;
   label: Phaser.GameObjects.Text;
   hint?: Phaser.GameObjects.Text;
@@ -132,9 +132,10 @@ export class StartScene extends Phaser.Scene {
     this.actions = [
       this.makeAction('play', cx, startY + 0 * (actionH + gap), actionW, actionH, this.playLabel(), 32),
       this.makeAction('switchMode', cx, startY + 1 * (actionH + gap), actionW, actionH, 'SWITCH MODE', 20),
-      this.makeAction('changeUser', cx, startY + 2 * (actionH + gap), actionW, actionH, 'CHANGE USER', 20),
-      this.makeAction('badges', cx, startY + 3 * (actionH + gap), actionW, actionH, 'BADGES', 20),
-      this.makeAction('leaderboard', cx, startY + 4 * (actionH + gap), actionW, actionH, 'LEADERBOARD', 20),
+      this.makeAction('skin', cx, startY + 2 * (actionH + gap), actionW, actionH, 'SKIN', 20),
+      this.makeAction('changeUser', cx, startY + 3 * (actionH + gap), actionW, actionH, 'CHANGE USER', 20),
+      this.makeAction('badges', cx, startY + 4 * (actionH + gap), actionW, actionH, 'BADGES', 20),
+      this.makeAction('leaderboard', cx, startY + 5 * (actionH + gap), actionW, actionH, 'LEADERBOARD', 20),
     ];
     this.modeLabel = this.actions[0].label; // PLAY's label updates when mode flips
 
@@ -323,6 +324,7 @@ export class StartScene extends Phaser.Scene {
     else if (action.id === 'changeUser') this.gotoUserSelect();
     else if (action.id === 'badges') this.gotoScene('BadgesScene');
     else if (action.id === 'leaderboard') this.gotoScene('LeaderboardScene');
+    else if (action.id === 'skin') this.gotoScene('SkinSelectScene');
   }
 
   private detachGamepadListener(): void {

@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { PLAYER, COLORS } from '../core/constants';
 import { InputController } from '../core/input';
 import { LedgeQuery, MovementSnapshot, PlayerMovement, SlidePoleQuery } from '../movement/PlayerMovement';
+import { SkinDef, getSkin } from '../state/Skins';
+import { UserStore } from '../state/UserStore';
 
 /** Per-run movement stat counters. Captured by GameScene at endRun and
  *  passed into RunSummary for UserStore + the badge evaluator. */
@@ -53,6 +55,13 @@ export class Player {
    *  scene, recreated on every restart, so no manual reset needed). */
   runStats: PlayerRunStats = { wallJumps: 0, ledgeClimbs: 0 };
 
+  /** Cosmetic skin colours — resolved once on construction from the
+   *  current user's selectedSkinId. Determines body fill, dash flash,
+   *  stroke, and dash trail. All hurt/attack tint logic still uses
+   *  the shared COLORS.playerHurt so damage feedback stays consistent
+   *  across skins. */
+  private skin: SkinDef;
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -64,7 +73,14 @@ export class Player {
     findLedge?: LedgeQuery,
     findSlidePole?: SlidePoleQuery,
   ) {
-    this.sprite = scene.add.rectangle(x, y, PLAYER.width, PLAYER.height, COLORS.player);
+    // Resolve the cosmetic skin once at construction. The current user
+    // is read from UserStore; falls back to default ('lionn') if nobody
+    // is logged in (shouldn't happen post-NameEntry routing but
+    // defensive).
+    this.skin = getSkin(UserStore.getCurrentUser()?.selectedSkinId);
+
+    this.sprite = scene.add.rectangle(x, y, PLAYER.width, PLAYER.height, this.skin.bodyFill);
+    this.sprite.setStrokeStyle(2, this.skin.bodyStroke, 0.9);
     scene.physics.add.existing(this.sprite);
     this.body = this.sprite.body as Phaser.Physics.Arcade.Body;
     this.body.setCollideWorldBounds(true);
@@ -184,14 +200,16 @@ export class Player {
     }
     this.hitbox.drawDebug();
 
-    // Visuals
+    // Visuals — skin drives idle/dash colours; hurt + attack tints stay
+    // consistent across skins so damage / attack feedback reads the
+    // same regardless of cosmetic.
     this.sprite.fillColor = snap.hurt
       ? COLORS.playerHurt
       : snap.dashing
-        ? COLORS.playerDash
+        ? this.skin.dashFill
         : this.attack.isAttacking()
           ? 0xc59a48
-          : COLORS.player;
+          : this.skin.bodyFill;
 
     if (snap.dashing) {
       this.trailEmitTimer += dtSec * 1000;
@@ -272,7 +290,7 @@ export class Player {
 
   private emitTrail(): void {
     const scene = this.sprite.scene;
-    const r = scene.add.rectangle(this.sprite.x, this.sprite.y, PLAYER.width, PLAYER.height, COLORS.playerDash, 0.55);
+    const r = scene.add.rectangle(this.sprite.x, this.sprite.y, PLAYER.width, PLAYER.height, this.skin.trailFill, 0.55);
     r.setDepth(this.sprite.depth - 1);
     this.trail.push(r);
   }

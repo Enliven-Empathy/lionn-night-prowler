@@ -51,6 +51,26 @@ export interface BossDef {
    *  boss's chunk (no pits, no platforms). Needed for bosses with
    *  large bodies that need running room. */
   needsFlatArena?: boolean;
+
+  // ─── AI overrides ─────────────────────────────────────────────
+  // Patrol.update reads these to differentiate the boss fight from a
+  // standard patrol (and from other bosses). All optional; absent =
+  // use the default patrol values.
+
+  /** ATTACKS[attackName] used when the boss commits an attack.
+   *  Defaults to 'claw_2'. The 3 majors each have their own attack
+   *  profile (shadow_dash / crimson_slam / sovereign_strike). */
+  attackName?: string;
+  /** Override the patrol's CHASE_SPEED (default 170). Higher = more
+   *  aggressive pursuit; lower = brute-style slow approach. */
+  chaseSpeed?: number;
+  /** Override the patrol's DETECT_X (default 280). Wider = sees the
+   *  player from further away and starts chasing earlier. */
+  detectRangeX?: number;
+  /** Override the patrol's ATTACK_X (default 56). Wider = boss
+   *  commits to attacks from further out, useful for long-reach
+   *  weapons like shadow_dash. */
+  attackRangeX?: number;
 }
 
 /** The minor random boss — preserved as the previous "boss" flag's
@@ -92,6 +112,12 @@ export const BOSS_MAJORS: BossDef[] = [
     stroke: 0xb47bff,
     endlessChunkIndex: 5,
     rewardCount: 2,
+    // Fast aggressor. Long lunges, sees the kid early, presses
+    // forward aggressively. Damage 3 per hit (shadow_dash).
+    attackName: 'shadow_dash',
+    chaseSpeed: 220,
+    detectRangeX: 360,
+    attackRangeX: 90,
   },
   {
     id: 'crimson_beast',
@@ -103,6 +129,13 @@ export const BOSS_MAJORS: BossDef[] = [
     stroke: 0xff5050,
     endlessChunkIndex: 12,
     rewardCount: 2,
+    // Brute. Slow walk, telegraphs a heavy slam (4 damage, launches
+    // the kid upward). Big hitbox makes the slam hard to avoid by
+    // standing still — kid has to back away or use the dizzy gap.
+    attackName: 'crimson_slam',
+    chaseSpeed: 140,
+    detectRangeX: 340,
+    attackRangeX: 110,
   },
   {
     id: 'night_sovereign',
@@ -120,6 +153,13 @@ export const BOSS_MAJORS: BossDef[] = [
     // Big body needs room — force a flat full-width arena ground for
     // chunk 22 so the kid doesn't fall into a pit mid-fight.
     needsFlatArena: true,
+    // Master fighter. Long-reach measured strike (4 damage). Sees
+    // half a screen away; chases at brisk pace. The challenge is the
+    // immunity gate, not the AI tempo.
+    attackName: 'sovereign_strike',
+    chaseSpeed: 200,
+    detectRangeX: 420,
+    attackRangeX: 100,
   },
 ];
 
