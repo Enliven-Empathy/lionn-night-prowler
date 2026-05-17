@@ -19,8 +19,13 @@ const FILL_HURT = 0xff8caf;
 const FILL_DEAD = 0x140a1f;
 const FILL_DIZZY = 0x8ad4e0;        // ice-blue overlay — reads as "stunned"
 const STROKE = 0x9b59ff;
-const DIZZY_DURATION_MS = 2000;     // dash/pound → 2s vulnerability window
+const DIZZY_DURATION_MS = 2000;     // base duration; A applies 0.5^count multiplier
+const DIZZY_MIN_DURATION_MS = 200;  // floor so very-deep diminishing doesn't go invisible
+const DIZZY_RESET_MS = 5000;        // no re-dizzy for 5s → count resets to 0
 const DIZZY_IMMUNE_FLASH_MS = 80;   // brief flash when a blocked claw "no-effects"
+const WAKE_UP_STARTUP_MS = 200;     // D: bosses fire a counter-attack with this startup
+                                    // when their dizzy ends. Hyper-armour during this
+                                    // window means the kid can't re-dash through it.
 
 const DETECT_X = 280;
 const DETECT_Y = 120;
@@ -122,6 +127,22 @@ export class Patrol {
    *  damage; visual tint shifts to ice-blue. Set by takeDamage when
    *  attackName === 'dash' | 'pound_impact'. */
   private dizzyUntilMs = 0;
+  /** Diminishing-returns counter (mechanic A). Each consecutive
+   *  applyDizzy call on this target adds 1; the resulting duration is
+   *  DIZZY_DURATION_MS × 0.5^count (floored to DIZZY_MIN_DURATION_MS).
+   *  Resets to 0 if no new dizzy has been applied in DIZZY_RESET_MS
+   *  since the previous dizzy expired — fresh engagements get the
+   *  full 2 s window back. */
+  private recentDizzyCount = 0;
+  /** Tracks the previous frame's dizzy state for the dizzy-end edge
+   *  detection used by the boss wake-up counter (mechanic D). */
+  private wasDizzyLastFrame = false;
+  /** While timeMs < this value, takeDamage deflects ALL hits (dash,
+   *  pound, claw) — no damage, no dizzy, no hurt-stun. Set by the
+   *  boss wake-up counter during its attack startup so the kid can't
+   *  re-dash through it. Brief flash on each deflected hit gives
+   *  feedback. */
+  private hyperArmorUntilMs = 0;
 
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
@@ -242,6 +263,8 @@ export class Patrol {
     const idleFill = this.bossDef ? this.bossDef.fill : FILL_PATROL;
     const chaseFill = this.bossDef ? this.bossDef.chaseFill : FILL_CHASE;
     const dizzy = this.isDizzy(timeMs);
+    const dizzyJustEnded = this.wasDizzyLastFrame && !dizzy;
+    this.wasDizzyLastFrame = dizzy;
 
     // Dizzy state: AI freezes, vx decays to 0, ice-blue tint shows
     // the kid this enemy is now vulnerable. Slash-immune bosses
@@ -250,6 +273,31 @@ export class Patrol {
       this.aiState = 'hurt';
       this.sprite.fillColor = timeMs < this.flashUntil ? FILL_HURT : FILL_DIZZY;
       this.body.setVelocityX(this.body.velocity.x * 0.7);
+      this.maybeUpdateAttack(timeMs);
+      return;
+    }
+
+    // D — boss wake-up counter-attack. On the frame the boss's dizzy
+    // ends, fire an attack with a shortened startup AND hyper-armour
+    // for the duration of that startup. The kid can't interrupt the
+    // counter with another dash; they have to dodge or eat the swing.
+    // Together with A (diminishing returns), this stops the dash →
+    // dizzy → claw → re-dash spam dead in its tracks.
+    if (dizzyJustEnded && this.bossDef && !this.attack.isAttacking() && target.alive) {
+      const attackKey = this.bossDef.attackName ?? 'claw_2';
+      const baseAttack = ATTACKS[attackKey] ?? ATTACKS.claw_2;
+      const wakeAttack = { ...baseAttack, startupMs: WAKE_UP_STARTUP_MS };
+      this.facing = target.x < this.sprite.x ? -1 : 1;
+      this.attack.start(wakeAttack, timeMs);
+      this.cancelLunge?.();
+      this.attackFx.telegraph(this.sprite, WAKE_UP_STARTUP_MS, 'enemy');
+      this.cancelLunge = this.attackFx.lunge(this.sprite, wakeAttack, this.facing);
+      this.audio.play(SFX.ENEMY_ATTACK_SWING);
+      this.aiState = 'attack';
+      this.hyperArmorUntilMs = timeMs + WAKE_UP_STARTUP_MS;
+      // Tiny forward drift toward the kid so the swing connects if
+      // the kid stays in melee range.
+      this.body.setVelocityX(this.facing * 80);
       this.maybeUpdateAttack(timeMs);
       return;
     }
@@ -406,18 +454,47 @@ export class Patrol {
     return timeMs < this.dizzyUntilMs;
   }
 
-  /** Apply or extend the dizzy state. Auto-called from takeDamage when
-   *  the incoming attack is a dash or ground pound; can also be called
-   *  externally by GameScene (e.g. pound AOE that doesn't go through
-   *  the patrol's own takeDamage). Idempotent; takes the longer of
-   *  current vs new expiry. */
-  applyDizzy(durationMs: number, timeMs: number): void {
+  /** Apply (or extend) the dizzy state with diminishing returns.
+   *
+   *   - Each consecutive applyDizzy call adds 1 to recentDizzyCount.
+   *   - Actual duration = baseDurationMs × 0.5^count, floored at
+   *     DIZZY_MIN_DURATION_MS so deep diminishing isn't invisible.
+   *   - After DIZZY_RESET_MS without re-dizzy (measured from when the
+   *     previous dizzy expired), the count resets to 0 — a kid who
+   *     disengages for 5 s gets the full 2 s window back.
+   *
+   * This breaks the dash → dizzy → claw → dash → dizzy spam loop that
+   * made the dizzy mechanic feel exploitable: the kid still gets a
+   * satisfying first stun (2 s) and a tight second window (1 s), but
+   * by the third re-dizzy the window is only 0.5 s and they have to
+   * choose a different play. */
+  applyDizzy(baseDurationMs: number, timeMs: number): void {
     if (this.hp <= 0) return;
-    this.dizzyUntilMs = Math.max(this.dizzyUntilMs, timeMs + durationMs);
+    // Reset the count when the previous dizzy expired more than the
+    // reset window ago. We compare against dizzyUntilMs (== last
+    // expiry timestamp once it's in the past).
+    if (this.dizzyUntilMs > 0 && timeMs - this.dizzyUntilMs > DIZZY_RESET_MS) {
+      this.recentDizzyCount = 0;
+    }
+    const multiplier = Math.pow(0.5, this.recentDizzyCount);
+    const duration = Math.max(DIZZY_MIN_DURATION_MS, baseDurationMs * multiplier);
+    this.dizzyUntilMs = Math.max(this.dizzyUntilMs, timeMs + duration);
+    this.recentDizzyCount += 1;
   }
 
   takeDamage(event: DamageEvent, timeMs: number): void {
     if (this.hp <= 0) return;
+
+    // D — hyper-armour during a boss wake-up counter. The boss has
+    // committed to an attack and is uninterruptible for the duration
+    // of the startup; any hit (dash, pound, claw) bounces off without
+    // damage, dizzy, or hurt-stun. Brief flash gives the kid the
+    // "deflected" feedback so they know to back off and dodge.
+    if (timeMs < this.hyperArmorUntilMs) {
+      this.flashUntil = timeMs + DIZZY_IMMUNE_FLASH_MS;
+      try { this.audio.play(SFX.ENEMY_HURT); } catch { /* swallow */ }
+      return;
+    }
 
     // Dash and ground-pound impacts always apply dizzy on hit. This is
     // the new universal mechanic — works on every enemy, opens the
