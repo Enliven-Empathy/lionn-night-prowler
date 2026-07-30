@@ -37,9 +37,6 @@ export class AttackState {
     return this.phase !== 'idle';
   }
 
-  isActive(): boolean {
-    return this.phase === 'active';
-  }
 
   /** During active/recovery the player can chain into `current.next`. */
   canChain(): boolean {
@@ -50,9 +47,6 @@ export class AttackState {
     return this.current;
   }
 
-  phaseName(): Phase {
-    return this.phase;
-  }
 
   /**
    * Movement should typically be locked while attacking on the ground

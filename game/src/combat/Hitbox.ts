@@ -11,6 +11,17 @@ export class Hitbox {
   ownerX = 0;
   ownerY = 0;
   facing: 1 | -1 = 1;
+  /**
+   * Uniform multiplier applied to the attack's authored hitbox offsets
+   * and dimensions. Defaults to 1 (every attack is authored against the
+   * base 46×70 body).
+   *
+   * Bosses render at 1.5×–2.0× but were swinging their authored 1.0×
+   * boxes, so the Night Sovereign's 104×80 reach looked far shorter than
+   * its 92×140 silhouette implied and swings appeared to pass straight
+   * through the player. Patrol sets this from `bossDef.scale`.
+   */
+  scale = 1;
 
   private rect = new Phaser.Geom.Rectangle();
   private debugRect?: Phaser.GameObjects.Rectangle;
@@ -46,9 +57,12 @@ export class Hitbox {
       return this.rect;
     }
     const { offsetX, offsetY, w, h } = this.data.hitbox;
-    const cx = this.ownerX + offsetX * this.facing;
-    const cy = this.ownerY + offsetY;
-    this.rect.setTo(cx - w / 2, cy - h / 2, w, h);
+    const s = this.scale;
+    const cx = this.ownerX + offsetX * s * this.facing;
+    const cy = this.ownerY + offsetY * s;
+    const sw = w * s;
+    const sh = h * s;
+    this.rect.setTo(cx - sw / 2, cy - sh / 2, sw, sh);
     return this.rect;
   }
 

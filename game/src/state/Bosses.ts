@@ -1,7 +1,7 @@
 /**
  * Boss catalogue. The original "boss" Patrol flag has been generalised:
  * Patrol now takes an optional BossDef that fully specifies its stats
- * and visuals. Falsy = regular patrol (3 HP, 46×70, violet).
+ * and visuals. Falsy = regular patrol (PATROL_HP, 46×70, violet).
  *
  * Two tiers:
  *
@@ -71,6 +71,25 @@ export interface BossDef {
    *  commits to attacks from further out, useful for long-reach
    *  weapons like shadow_dash. */
   attackRangeX?: number;
+
+  /**
+   * Damage a SINGLE hit must deal to interrupt this enemy's in-progress
+   * attack. 0 / undefined = any hit interrupts (the old behaviour, kept
+   * for regular patrols).
+   *
+   * Why this exists: `Patrol.takeDamage` used to call `attack.cancel()`
+   * unconditionally. `claw_1` has a 60 ms startup and deals 1 damage,
+   * while `crimson_slam` has a 360 ms startup — so a child mashing light
+   * attack interrupted every boss wind-up before it ever reached its
+   * active frames. A boss could literally never land a hit on a masher,
+   * which is the real reason bosses felt like "big patrols with more HP".
+   *
+   * At poise 2: claw_1 / claw_2 / dash (1 damage) no longer interrupt,
+   * but claw_3 (4) and the ground pound (3) still do. Light pressure is
+   * ignored; a committed heavy is rewarded. Dizzy still stops the boss
+   * regardless — dash and pound remain the reliable "shut it down" tools.
+   */
+  poise?: number;
 }
 
 /** The minor random boss — preserved as the previous "boss" flag's
@@ -86,6 +105,7 @@ export const BOSS_MINOR: BossDef = {
   stroke: 0xff8c5a,
   endlessChunkIndex: -1,
   rewardCount: 1,
+  poise: 2,
 };
 
 /** Three fixed-milestone endbosses. Order in the array = order of
@@ -112,6 +132,7 @@ export const BOSS_MAJORS: BossDef[] = [
     stroke: 0xb47bff,
     endlessChunkIndex: 5,
     rewardCount: 2,
+    poise: 2,
     // Fast aggressor. Long lunges, sees the kid early, presses
     // forward aggressively. Damage 3 per hit (shadow_dash).
     attackName: 'shadow_dash',
@@ -129,6 +150,7 @@ export const BOSS_MAJORS: BossDef[] = [
     stroke: 0xff5050,
     endlessChunkIndex: 12,
     rewardCount: 2,
+    poise: 3,
     // Brute. Slow walk, telegraphs a heavy slam (4 damage, launches
     // the kid upward). Big hitbox makes the slam hard to avoid by
     // standing still — kid has to back away or use the dizzy gap.
@@ -147,6 +169,7 @@ export const BOSS_MAJORS: BossDef[] = [
     stroke: 0xffd86a,
     endlessChunkIndex: 22,
     rewardCount: 3,
+    poise: 3,
     // Final-boss gate: claws bounce off unless the boss is dizzy.
     // The kid must dash or pound first to open a damage window.
     slashImmuneWhenAlert: true,

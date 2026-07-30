@@ -4,7 +4,7 @@
 # Run this anytime you (or Claude) edit the game and want the public
 # URL updated. Pages is live at:
 #
-#   https://alex-enliven.github.io/lionn-night-prowler/
+#   https://enliven-empathy.github.io/lionn-night-prowler/
 #
 # This script:
 #   1. Rebuilds the production bundle (`npm run build` in game/)
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GAME_DIR="$SCRIPT_DIR/game"
 DIST_DIR="$GAME_DIR/dist"
 STAGING_DIR="$SCRIPT_DIR/.deploy-staging"
-REMOTE_URL="https://github.com/alex-enliven/lionn-night-prowler.git"
+REMOTE_URL="https://github.com/Enliven-Empathy/lionn-night-prowler.git"
 
 cd "$GAME_DIR"
 
@@ -44,8 +44,24 @@ git add . >/dev/null
 git -c "user.email=deploy@lionn-night-prowler" -c "user.name=Lionn Deploy" commit -m "deploy: $(date -u '+%Y-%m-%d %H:%M:%S')Z" >/dev/null
 
 echo "[deploy] Pushing to gh-pages branch..."
-git push "$REMOTE_URL" deploy:gh-pages --force
+# Credential handling: this machine's global git credential.helper is Git
+# Credential Manager, which pops a GUI dialog. In a non-interactive shell
+# (CI, an agent, a piped invocation) that dialog can never be answered and
+# the push hangs forever — it does not fail, it just sits there.
+#
+# `gh` is already authenticated with repo scope, so prefer its credential
+# helper. The FIRST `-c credential.helper=` is load-bearing: git *chains*
+# helpers, so without the empty value resetting the list, GCM is still
+# consulted first and still hangs.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  GIT_TERMINAL_PROMPT=0 git \
+    -c credential.helper= \
+    -c credential.helper='!gh auth git-credential' \
+    push "$REMOTE_URL" deploy:gh-pages --force
+else
+  git push "$REMOTE_URL" deploy:gh-pages --force
+fi
 
 echo
 echo "[deploy] Done. GitHub Pages will rebuild in ~30 seconds."
-echo "[deploy] Live URL:  https://alex-enliven.github.io/lionn-night-prowler/"
+echo "[deploy] Live URL:  https://enliven-empathy.github.io/lionn-night-prowler/"

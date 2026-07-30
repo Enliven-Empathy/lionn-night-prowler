@@ -106,7 +106,6 @@ export class Patrol {
   private xMax: number;
   private flashUntil = 0;
   private hurtUntil = 0;
-  private nextThinkAt = 0;
 
   private damage: DamageSystem;
   private fx: HitFx;
@@ -187,6 +186,11 @@ export class Patrol {
 
     this.attack = new AttackState();
     this.hitbox = new Hitbox(scene, 'enemy');
+    // Scale the attack reach with the body. Attacks are authored against
+    // the base 46×70 patrol, so without this a 2.0× boss swung a hitbox
+    // sized for a body less than half its width — visually the swing
+    // passed through the player without connecting.
+    this.hitbox.scale = bossDef ? bossDef.scale : 1;
 
     this.xMin = xMin;
     this.xMax = xMax;
@@ -412,7 +416,6 @@ export class Patrol {
     }
 
     this.maybeUpdateAttack(timeMs);
-    void this.nextThinkAt; // reserved for future stateful AI work
     this.prevAiState = this.aiState;
   }
 
@@ -523,16 +526,44 @@ export class Patrol {
 
     this.hp = Math.max(0, this.hp - event.damage);
     this.flashUntil = timeMs + 110;
-    this.hurtUntil = timeMs + 220;
-    this.attack.cancel();
-    this.hitbox.deactivate();
-    this.cancelLunge?.();
-    this.cancelLunge = null;
+
+    // ─── Poise ────────────────────────────────────────────────────────
+    // A hit only interrupts an in-progress attack if it beats this
+    // enemy's poise. Regular patrols have no poise (undefined → 0), so
+    // any hit still staggers them exactly as before.
+    //
+    // Bosses set poise 2-3, so 1-damage chip (claw_1, claw_2, dash) no
+    // longer cancels a wind-up — which is what let a mashing child stop
+    // every boss attack before its active frames and made bosses feel
+    // like harmless big patrols. claw_3 (4) and the pound (3) still cut
+    // through, and dizzy (from dash/pound) still shuts the boss down
+    // outright, so the counter-play stays intact and readable.
+    const poise = this.bossDef?.poise ?? 0;
+    const interrupts = event.damage >= poise;
+    if (interrupts) {
+      this.hurtUntil = timeMs + 220;
+      this.attack.cancel();
+      this.hitbox.deactivate();
+      this.cancelLunge?.();
+      this.cancelLunge = null;
+    } else {
+      // Poised through it: the attack continues. Still give a short
+      // hurt-flash so the hit visibly registers, but no stagger and no
+      // attack cancel.
+      this.flashUntil = timeMs + 90;
+    }
     this.audio.play(this.hp === 0 ? SFX.ENEMY_DEATH : SFX.ENEMY_HURT);
 
+    // Knockback is skipped when the enemy poised through the hit and is
+    // still alive — shoving a boss backwards mid-swing would visually
+    // detach it from the attack it's committed to, and would let chip
+    // damage push it out of its own hitbox's reach. A killing blow always
+    // knocks back, so the death pop still reads.
     const dir = this.body.center.x < event.fromX ? -1 : 1;
-    this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST);
-    this.body.setVelocityY(event.knockbackY * KNOCKBACK_RESIST);
+    if (interrupts || this.hp === 0) {
+      this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST);
+      this.body.setVelocityY(event.knockbackY * KNOCKBACK_RESIST);
+    }
 
     this.fx.hitPause(event.hitstopMs, timeMs);
     this.fx.shake(80, 0.006);
@@ -626,7 +657,11 @@ export class Patrol {
       a.y < b.y + b.height && a.y + a.height > b.y
     ) {
       this.thrownAlreadyHit.add(other.combatant.id);
-      other.takeDamage(
+      // applyDirect, not other.takeDamage — the kill is credited to the
+      // player, so it has to reach the onHit listener for kill count,
+      // boss reward orbs and boss badges.
+      this.damage.applyDirect(
+        other.combatant,
         {
           damage: THROW_DAMAGE,
           fromX: this.sprite.x,
@@ -654,7 +689,12 @@ export class Patrol {
    * their score. Called from update() on a high-vy grounded transition.
    */
   private fatalImpact(timeMs: number): void {
-    this.takeDamage(
+    // Credited to the player (team: 'player') — an up-throw that ends in a
+    // lethal landing is a player kill. Routed through DamageSystem so the
+    // onHit listener fires; calling this.takeDamage directly meant a boss
+    // killed by up-throwing it awarded no orbs, no badge and no kill count.
+    this.damage.applyDirect(
+      this.combatant,
       {
         damage: 99,
         fromX: this.sprite.x,

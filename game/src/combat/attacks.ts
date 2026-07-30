@@ -36,7 +36,9 @@ export const ATTACKS: Record<string, AttackData> = {
   // Combo finisher. Lands ONLY as the third hit of claw_1 → claw_2 →
   // claw_3 (the chain logic in Player.tryStartAttack drives this). Stats
   // are tuned to feel like a payoff for landing two hits in a row:
-  //   - damage 4: enough to one-shot most patrols (HP 3) outright.
+  //   - damage 4: two claw_3s fell a standard patrol (PATROL_HP = 6);
+  //     it also beats boss poise, so a committed heavy still interrupts
+  //     a boss wind-up where light chip damage no longer does.
   //   - knockback ±400 / -280 launches enemies far enough to chain into
   //     pits or spike rows for a multi-kill.
   //   - hitstop 200 ms gives the impact a full beat to read on screen.
@@ -79,45 +81,6 @@ export const ATTACKS: Record<string, AttackData> = {
     hitstopMs: 110,
     hitbox: { offsetX: 18, offsetY: 6, w: 70, h: 70 },
     fxTag: 'pounce',
-  },
-
-  // ---------- Night Cutter ----------
-  cutter_dash: {
-    name: 'cutter_dash',
-    startupMs: 0,
-    activeMs: 240,
-    recoveryMs: 320,
-    damage: 1,
-    knockbackX: 220,
-    knockbackY: -160,
-    hitstopMs: 80,
-    hitbox: { offsetX: 32, offsetY: -4, w: 76, h: 60 },
-    fxTag: 'cutter-dash',
-  },
-  cutter_crescent_1: {
-    name: 'cutter_crescent_1',
-    startupMs: 280,
-    activeMs: 100,
-    recoveryMs: 180,
-    damage: 1,
-    knockbackX: 140,
-    knockbackY: -60,
-    hitstopMs: 70,
-    hitbox: { offsetX: 40, offsetY: -6, w: 72, h: 64 },
-    next: 'cutter_crescent_2',
-    fxTag: 'crescent-arc',
-  },
-  cutter_crescent_2: {
-    name: 'cutter_crescent_2',
-    startupMs: 240,
-    activeMs: 100,
-    recoveryMs: 460,
-    damage: 1,
-    knockbackX: 180,
-    knockbackY: -80,
-    hitstopMs: 90,
-    hitbox: { offsetX: 44, offsetY: -8, w: 80, h: 70 },
-    fxTag: 'crescent-arc',
   },
 
   // ─── Boss attacks ────────────────────────────────────────────────

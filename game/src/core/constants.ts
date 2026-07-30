@@ -92,8 +92,6 @@ export const PLAYER = {
 } as const;
 
 export const COMBAT = {
-  hitPauseMs: 70,
-  hitPauseHeavyMs: 110,
   comboResetMs: 360,
   attackBufferMs: 110,
 } as const;
@@ -141,22 +139,6 @@ export const WALL_TOWER = {
   bottomGapPx: 110,
   /** Tier-3 reward Y offset above wall top. */
   rewardYOffset: 36,
-} as const;
-
-export const ENEMY = {
-  cutter: {
-    width: 56,
-    height: 78,
-    runSpeed: 175,
-    chaseSpeed: 230,
-    dashSpeed: 720,
-    maxHp: 5,
-    detectRangeX: 360,
-    detectRangeY: 130,
-    attackRangeX: 70,
-    attackRangeY: 60,
-    knockbackResist: 0.6,
-  },
 } as const;
 
 export const COLORS = {

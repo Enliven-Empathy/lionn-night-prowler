@@ -548,7 +548,11 @@ export class GameScene extends Phaser.Scene {
           if (!patrolRect) continue;
           if (!Phaser.Geom.Intersects.RectangleToRectangle(playerRect, patrolRect)) continue;
           this.dashHitIds.add(p.combatant.id);
-          p.takeDamage(
+          // Routed through DamageSystem.applyDirect (not p.takeDamage) so the
+          // onHit listener fires — otherwise a dash kill awards no kill count,
+          // no boss reward orbs and no boss badge.
+          this.damage.applyDirect(
+            p.combatant,
             {
               damage: 1,
               fromX: this.player.sprite.x,
@@ -622,7 +626,10 @@ export class GameScene extends Phaser.Scene {
             pBody.x < spikeRect.right && pBody.x + pBody.width > spikeRect.left &&
             pBody.y < spikeRect.bottom && pBody.y + pBody.height > spikeRect.top
           ) {
-            p.takeDamage({
+            // applyDirect, not takeDamage — spike kills are credited to the
+            // player (team: 'player'), so they must reach the onHit listener
+            // for kill count / boss reward / boss badge.
+            this.damage.applyDirect(p.combatant, {
               damage: 99,
               fromX: s.worldX,
               fromY: s.worldY,

@@ -28,6 +28,37 @@ export class DamageSystem {
     this.hitListeners.push(listener);
   }
 
+  /**
+   * Apply a damage event to ONE known target and fire the hit listeners.
+   *
+   * Use this for damage that doesn't come from a swinging Hitbox or an AOE
+   * rect — the dash overlap, spike contact, a thrown body colliding, and
+   * fall-impact kills. Those all used to call `target.takeDamage()`
+   * directly, which meant they never reached the `onHit` listeners. Since
+   * kill counting, boss reward orbs and boss badges are all driven from
+   * that listener, killing a boss by dashing it or up-throwing it awarded
+   * NOTHING. It went unnoticed because claws (testHitbox) and the ground
+   * pound (testRect) both route through here already.
+   *
+   * `hitWorldPoint` defaults to the target's hurtbox centre, which is what
+   * the FX listeners want anyway.
+   */
+  applyDirect(
+    target: Combatant,
+    event: DamageEvent,
+    timeMs: number,
+    hitWorldPoint?: { x: number; y: number },
+  ): void {
+    if (!target.isAlive()) return;
+    const hurt = target.hurtbox();
+    const point = hitWorldPoint ?? (hurt
+      ? { x: hurt.x + hurt.width / 2, y: hurt.y + hurt.height / 2 }
+      : { x: event.fromX, y: event.fromY });
+
+    target.takeDamage(event, timeMs);
+    for (const l of this.hitListeners) l(event, target, point);
+  }
+
   /** Called every frame while a hitbox is active. */
   testHitbox(hitbox: Hitbox, timeMs: number): void {
     if (!hitbox.active || !hitbox.data) return;

@@ -11,6 +11,11 @@ export interface PlayerRunStats {
   wallJumps: number;
   ledgeClimbs: number;
 }
+
+/** Minimum gap between "deflected" cues while invulnerable. A hazard
+ *  overlap can persist for many frames; without this the spark/SFX would
+ *  fire on every one of them. */
+const DEFLECT_CUE_COOLDOWN_MS = 120;
 import { AttackState } from '../combat/AttackState';
 import { Hitbox } from '../combat/Hitbox';
 import { DamageSystem } from '../combat/DamageSystem';
@@ -45,6 +50,9 @@ export class Player {
   /** Tracks the last frame's crouch state so we only resize the body on
    *  transitions (resizing every frame is wasteful and visually jittery). */
   private wasCrouching = false;
+  /** Wall-clock ms of the last "deflected" cue, so a multi-frame hazard
+   *  overlap during i-frames plays the effect once rather than every tick. */
+  private lastDeflectAt = -Infinity;
 
   /** Most recent hit-point world coords from a hitbox we landed. Used to spawn slash FX. */
   lastHitPoint: { x: number; y: number } | null = null;
@@ -108,11 +116,18 @@ export class Player {
     this.audio = audio;
     this.hp = PLAYER.maxHp;
 
+    // The hurtbox is now ALWAYS present while alive. Invulnerability used to
+    // be enforced here by returning null, which had two bad consequences:
+    //   1. It only covered damage arriving through DamageSystem. GameScene
+    //      calls player.takeDamage() DIRECTLY for spikes and overhangs, so
+    //      those bypassed i-frames entirely and dealt damage every frame of
+    //      overlap (spikes: 4 dmg/frame → 40+ damage against 10 HP).
+    //   2. A null hurtbox means DamageSystem never calls hitbox.markHit(), so
+    //      an enemy swing still active when i-frames expire lands anyway.
+    // The gate now lives in takeDamage() where every path must pass through.
     this.combatant = damage.register({
       team: 'player',
-      hurtbox: () => this.hp > 0 && !this.movement.isInvulnerable(scene.time.now)
-        ? this.hurtbox()
-        : null,
+      hurtbox: () => (this.hp > 0 ? this.hurtbox() : null),
       takeDamage: (event, time) => this.takeDamage(event, time),
       isAlive: () => this.hp > 0,
     });
@@ -274,6 +289,31 @@ export class Player {
 
   takeDamage(event: DamageEvent, timeMs: number): void {
     if (this.hp <= 0) return;
+
+    // ─── Invulnerability gate — MUST stay above the `hp -=` line ───────
+    // Every damage source funnels through here: DamageSystem hitboxes and
+    // AOE rects, plus GameScene's direct calls for spikes and overhangs.
+    // Previously only the DamageSystem path was gated (via a null hurtbox),
+    // so a spike overlap applied 4 damage EVERY FRAME — a guaranteed kill
+    // from a single touch, which read as random unfairness.
+    //
+    // A blocked hit still gets a small "deflected" cue so the player learns
+    // they successfully dodged, but deliberately no hitstop and no shake —
+    // those would make a good dodge feel like a hit. Rate-limited so a
+    // multi-frame overlap doesn't machine-gun the effect.
+    if (this.movement.isInvulnerable(timeMs)) {
+      if (timeMs - this.lastDeflectAt > DEFLECT_CUE_COOLDOWN_MS) {
+        this.lastDeflectAt = timeMs;
+        try {
+          this.fx.spark(this.sprite.x, this.sprite.y, 0xc4b8e8);
+          this.audio.play(SFX.ENEMY_HURT, { volume: 0.4, rate: 1.4 });
+        } catch {
+          // Cue is cosmetic — never let it break damage handling.
+        }
+      }
+      return;
+    }
+
     this.hp = Math.max(0, this.hp - event.damage);
     this.movement.takeHurt(timeMs, event.fromX);
     this.attack.cancel();
