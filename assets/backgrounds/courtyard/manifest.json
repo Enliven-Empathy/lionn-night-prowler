@@ -1,0 +1,74 @@
+[
+  {
+    "name": "backdrop_silhouettes",
+    "frameWidth": 495,
+    "frameHeight": 305,
+    "frameRate": 12,
+    "anchor": "center",
+    "frames": [
+      {
+        "groupName": "backdrop_silhouettes",
+        "index": 0,
+        "fileName": "backdrop_silhouettes_000",
+        "width": 495,
+        "height": 305,
+        "anchorX": 248,
+        "anchorY": 153
+      }
+    ]
+  },
+  {
+    "name": "fog_mist_strip",
+    "frameWidth": 380,
+    "frameHeight": 70,
+    "frameRate": 12,
+    "anchor": "center",
+    "frames": [
+      {
+        "groupName": "fog_mist_strip",
+        "index": 0,
+        "fileName": "fog_mist_strip_000",
+        "width": 380,
+        "height": 70,
+        "anchorX": 190,
+        "anchorY": 35
+      }
+    ]
+  },
+  {
+    "name": "wall_block",
+    "frameWidth": 380,
+    "frameHeight": 80,
+    "frameRate": 12,
+    "anchor": "center",
+    "frames": [
+      {
+        "groupName": "wall_block",
+        "index": 0,
+        "fileName": "wall_block_000",
+        "width": 380,
+        "height": 80,
+        "anchorX": 190,
+        "anchorY": 40
+      }
+    ]
+  },
+  {
+    "name": "platform_top",
+    "frameWidth": 380,
+    "frameHeight": 50,
+    "frameRate": 12,
+    "anchor": "center",
+    "frames": [
+      {
+        "groupName": "platform_top",
+        "index": 0,
+        "fileName": "platform_top_000",
+        "width": 380,
+        "height": 50,
+        "anchorX": 190,
+        "anchorY": 25
+      }
+    ]
+  }
+]

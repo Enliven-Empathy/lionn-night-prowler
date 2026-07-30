@@ -1,0 +1,164 @@
+[
+  {
+    "name": "idle",
+    "frameWidth": 180,
+    "frameHeight": 224,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "idle",
+        "index": 0,
+        "fileName": "idle_000",
+        "width": 180,
+        "height": 224,
+        "anchorX": 90,
+        "anchorY": 218
+      }
+    ]
+  },
+  {
+    "name": "run",
+    "frameWidth": 235,
+    "frameHeight": 190,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "run",
+        "index": 0,
+        "fileName": "run_000",
+        "width": 235,
+        "height": 190,
+        "anchorX": 118,
+        "anchorY": 184
+      }
+    ]
+  },
+  {
+    "name": "crouch",
+    "frameWidth": 262,
+    "frameHeight": 153,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "crouch",
+        "index": 0,
+        "fileName": "crouch_000",
+        "width": 262,
+        "height": 153,
+        "anchorX": 131,
+        "anchorY": 147
+      }
+    ]
+  },
+  {
+    "name": "jump",
+    "frameWidth": 227,
+    "frameHeight": 185,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "jump",
+        "index": 0,
+        "fileName": "jump_000",
+        "width": 227,
+        "height": 185,
+        "anchorX": 114,
+        "anchorY": 179
+      }
+    ]
+  },
+  {
+    "name": "claw_combo",
+    "frameWidth": 157,
+    "frameHeight": 175,
+    "frameRate": 14,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "claw_combo",
+        "index": 0,
+        "fileName": "claw_combo_000",
+        "width": 157,
+        "height": 175,
+        "anchorX": 79,
+        "anchorY": 169
+      },
+      {
+        "groupName": "claw_combo",
+        "index": 1,
+        "fileName": "claw_combo_001",
+        "width": 157,
+        "height": 175,
+        "anchorX": 79,
+        "anchorY": 169
+      },
+      {
+        "groupName": "claw_combo",
+        "index": 2,
+        "fileName": "claw_combo_002",
+        "width": 157,
+        "height": 175,
+        "anchorX": 79,
+        "anchorY": 169
+      }
+    ]
+  },
+  {
+    "name": "shadow_dash",
+    "frameWidth": 210,
+    "frameHeight": 232,
+    "frameRate": 18,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "shadow_dash",
+        "index": 0,
+        "fileName": "shadow_dash_000",
+        "width": 210,
+        "height": 232,
+        "anchorX": 105,
+        "anchorY": 226
+      }
+    ]
+  },
+  {
+    "name": "shadow_pounce",
+    "frameWidth": 201,
+    "frameHeight": 153,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "shadow_pounce",
+        "index": 0,
+        "fileName": "shadow_pounce_000",
+        "width": 201,
+        "height": 153,
+        "anchorX": 101,
+        "anchorY": 147
+      }
+    ]
+  },
+  {
+    "name": "wall_cling",
+    "frameWidth": 172,
+    "frameHeight": 210,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "wall_cling",
+        "index": 0,
+        "fileName": "wall_cling_000",
+        "width": 172,
+        "height": 210,
+        "anchorX": 86,
+        "anchorY": 204
+      }
+    ]
+  }
+]

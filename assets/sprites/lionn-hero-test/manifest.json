@@ -1,0 +1,20 @@
+[
+  {
+    "name": "hero",
+    "frameWidth": 268,
+    "frameHeight": 826,
+    "frameRate": 12,
+    "anchor": "foot",
+    "frames": [
+      {
+        "groupName": "hero",
+        "index": 0,
+        "fileName": "hero_000",
+        "width": 268,
+        "height": 826,
+        "anchorX": 134,
+        "anchorY": 818
+      }
+    ]
+  }
+]

@@ -1,0 +1,44 @@
+{
+  "frames": {
+    "hero_000": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 826
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 268,
+        "h": 826
+      },
+      "sourceSize": {
+        "w": 268,
+        "h": 826
+      },
+      "anchor": {
+        "x": 134,
+        "y": 818
+      }
+    }
+  },
+  "meta": {
+    "app": "lionn-sprite-extract",
+    "version": "0.0.1",
+    "image": "atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 270,
+      "h": 826
+    },
+    "scale": "1"
+  },
+  "animations": {
+    "hero": [
+      "hero_000"
+    ]
+  }
+}

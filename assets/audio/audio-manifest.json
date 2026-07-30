@@ -1,0 +1,158 @@
+[
+  {
+    "key": "player_jump",
+    "filename": "player_jump.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_double_jump",
+    "filename": "player_double_jump.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_land",
+    "filename": "player_land.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_dash",
+    "filename": "player_dash.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_wall_cling",
+    "filename": "player_wall_cling.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_wall_jump",
+    "filename": "player_wall_jump.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_claw_1",
+    "filename": "player_claw_1.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_claw_2",
+    "filename": "player_claw_2.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_claw_3",
+    "filename": "player_claw_3.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_air_claw",
+    "filename": "player_air_claw.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_shadow_pounce",
+    "filename": "player_shadow_pounce.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_hurt",
+    "filename": "player_hurt.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "player_death",
+    "filename": "player_death.mp3",
+    "scope": "player",
+    "loop": false
+  },
+  {
+    "key": "enemy_alert",
+    "filename": "enemy_alert.mp3",
+    "scope": "enemy",
+    "loop": false
+  },
+  {
+    "key": "enemy_attack_swing",
+    "filename": "enemy_attack_swing.mp3",
+    "scope": "enemy",
+    "loop": false
+  },
+  {
+    "key": "enemy_hurt",
+    "filename": "enemy_hurt.mp3",
+    "scope": "enemy",
+    "loop": false
+  },
+  {
+    "key": "enemy_death",
+    "filename": "enemy_death.mp3",
+    "scope": "enemy",
+    "loop": false
+  },
+  {
+    "key": "combat_hit_light",
+    "filename": "combat_hit_light.mp3",
+    "scope": "combat",
+    "loop": false
+  },
+  {
+    "key": "combat_hit_heavy",
+    "filename": "combat_hit_heavy.mp3",
+    "scope": "combat",
+    "loop": false
+  },
+  {
+    "key": "pickup_coin",
+    "filename": "pickup_coin.mp3",
+    "scope": "collectible",
+    "loop": false
+  },
+  {
+    "key": "pickup_gem",
+    "filename": "pickup_gem.mp3",
+    "scope": "collectible",
+    "loop": false
+  },
+  {
+    "key": "pickup_crystal",
+    "filename": "pickup_crystal.mp3",
+    "scope": "collectible",
+    "loop": false
+  },
+  {
+    "key": "ui_game_over",
+    "filename": "ui_game_over.mp3",
+    "scope": "ui",
+    "loop": false
+  },
+  {
+    "key": "ui_restart",
+    "filename": "ui_restart.mp3",
+    "scope": "ui",
+    "loop": false
+  },
+  {
+    "key": "ui_best_score",
+    "filename": "ui_best_score.mp3",
+    "scope": "ui",
+    "loop": false
+  },
+  {
+    "key": "music_courtyard",
+    "filename": "music_courtyard.mp3",
+    "scope": "music",
+    "loop": true
+  }
+]

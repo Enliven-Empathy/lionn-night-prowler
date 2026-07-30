@@ -1,0 +1,283 @@
+{
+  "frames": {
+    "idle_000": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 180,
+        "h": 224
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 180,
+        "h": 224
+      },
+      "sourceSize": {
+        "w": 180,
+        "h": 224
+      },
+      "anchor": {
+        "x": 90,
+        "y": 218
+      }
+    },
+    "run_000": {
+      "frame": {
+        "x": 182,
+        "y": 0,
+        "w": 235,
+        "h": 190
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 235,
+        "h": 190
+      },
+      "sourceSize": {
+        "w": 235,
+        "h": 190
+      },
+      "anchor": {
+        "x": 118,
+        "y": 184
+      }
+    },
+    "crouch_000": {
+      "frame": {
+        "x": 419,
+        "y": 0,
+        "w": 262,
+        "h": 153
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 262,
+        "h": 153
+      },
+      "sourceSize": {
+        "w": 262,
+        "h": 153
+      },
+      "anchor": {
+        "x": 131,
+        "y": 147
+      }
+    },
+    "jump_000": {
+      "frame": {
+        "x": 683,
+        "y": 0,
+        "w": 227,
+        "h": 185
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 227,
+        "h": 185
+      },
+      "sourceSize": {
+        "w": 227,
+        "h": 185
+      },
+      "anchor": {
+        "x": 114,
+        "y": 179
+      }
+    },
+    "claw_combo_000": {
+      "frame": {
+        "x": 912,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "sourceSize": {
+        "w": 157,
+        "h": 175
+      },
+      "anchor": {
+        "x": 79,
+        "y": 169
+      }
+    },
+    "claw_combo_001": {
+      "frame": {
+        "x": 1071,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "sourceSize": {
+        "w": 157,
+        "h": 175
+      },
+      "anchor": {
+        "x": 79,
+        "y": 169
+      }
+    },
+    "claw_combo_002": {
+      "frame": {
+        "x": 1230,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 157,
+        "h": 175
+      },
+      "sourceSize": {
+        "w": 157,
+        "h": 175
+      },
+      "anchor": {
+        "x": 79,
+        "y": 169
+      }
+    },
+    "shadow_dash_000": {
+      "frame": {
+        "x": 1389,
+        "y": 0,
+        "w": 210,
+        "h": 232
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 210,
+        "h": 232
+      },
+      "sourceSize": {
+        "w": 210,
+        "h": 232
+      },
+      "anchor": {
+        "x": 105,
+        "y": 226
+      }
+    },
+    "shadow_pounce_000": {
+      "frame": {
+        "x": 1601,
+        "y": 0,
+        "w": 201,
+        "h": 153
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 201,
+        "h": 153
+      },
+      "sourceSize": {
+        "w": 201,
+        "h": 153
+      },
+      "anchor": {
+        "x": 101,
+        "y": 147
+      }
+    },
+    "wall_cling_000": {
+      "frame": {
+        "x": 1804,
+        "y": 0,
+        "w": 172,
+        "h": 210
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 172,
+        "h": 210
+      },
+      "sourceSize": {
+        "w": 172,
+        "h": 210
+      },
+      "anchor": {
+        "x": 86,
+        "y": 204
+      }
+    }
+  },
+  "meta": {
+    "app": "lionn-sprite-extract",
+    "version": "0.0.1",
+    "image": "atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1978,
+      "h": 232
+    },
+    "scale": "1"
+  },
+  "animations": {
+    "idle": [
+      "idle_000"
+    ],
+    "run": [
+      "run_000"
+    ],
+    "crouch": [
+      "crouch_000"
+    ],
+    "jump": [
+      "jump_000"
+    ],
+    "claw_combo": [
+      "claw_combo_000",
+      "claw_combo_001",
+      "claw_combo_002"
+    ],
+    "shadow_dash": [
+      "shadow_dash_000"
+    ],
+    "shadow_pounce": [
+      "shadow_pounce_000"
+    ],
+    "wall_cling": [
+      "wall_cling_000"
+    ]
+  }
+}
