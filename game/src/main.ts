@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { VIEW } from './core/constants';
+import { auditEnemyAttackReadability } from './combat/attacks';
 import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { ModeSelectScene } from './scenes/ModeSelectScene';
@@ -124,6 +125,17 @@ const config: Phaser.Types.Core.GameConfig = {
       console.error('[step-guard] caught engine-level step error:', e);
     }
   };
+}
+
+// Dev-only fairness audit of enemy attack readability. Surfacing this at
+// boot means a mistuned enemy attack is caught while editing the data,
+// not during a playtest with a frustrated child.
+if (import.meta.env.DEV) {
+  const problems = auditEnemyAttackReadability();
+  if (problems.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn('[readability audit] enemy attacks that may be unfair:\n  ' + problems.join('\n  '));
+  }
 }
 
 const game = new Phaser.Game(config);

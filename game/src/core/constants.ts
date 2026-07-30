@@ -91,6 +91,14 @@ export const PLAYER = {
   wallJumpBonusReachPx: 80,
 } as const;
 
+/** How much of an enemy's body scale carries into its hitbox SIZE. The
+ *  hitbox OFFSET always scales fully (a bigger body swings from further
+ *  out), but scaling the sweep itself by the full body scale made the
+ *  2.0x Night Sovereign reach 192px inside a 440ms wind-up — more than
+ *  the 187px a player covers even by running AND dashing, i.e. an
+ *  unavoidable hit. Damping keeps big bosses weighty but evadable. */
+export const HITBOX_SIZE_SCALE_DAMPING = 0.6;
+
 export const COMBAT = {
   comboResetMs: 360,
   attackBufferMs: 110,

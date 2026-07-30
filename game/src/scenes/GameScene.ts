@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { VIEW } from '../core/constants';
 import { InputController } from '../core/input';
 import { Player } from '../entities/Player';
-import { Patrol } from '../entities/Patrol';
+import { EnemyFrameContext, Patrol } from '../entities/Patrol';
 import { Collectible } from '../entities/Collectible';
 import { Heart } from '../entities/Heart';
 import { Spikes } from '../entities/Spikes';
@@ -34,6 +34,10 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private patrols: Patrol[] = [];
   private slidePoles: SlidePole[] = [];
+  /** Combatant id currently allowed to telegraph an attack, and when its
+   *  claim lapses. See requestAttackSlot() for why this exists. */
+  private attackTokenId: number | null = null;
+  private attackTokenExpiresAt = 0;
   private collectibles: Collectible[] = [];
   private hearts: Heart[] = [];
   private spikes: Spikes[] = [];
@@ -179,6 +183,8 @@ export class GameScene extends Phaser.Scene {
     this.debugHitboxes = false;
     this.patrols = [];
     this.slidePoles = [];
+    this.attackTokenId = null;
+    this.attackTokenExpiresAt = 0;
     this.collectibles = [];
     this.hearts = [];
     this.spikes = [];
@@ -518,11 +524,22 @@ export class GameScene extends Phaser.Scene {
       this.handleGrabInput(timeMs);
       this.maintainGrabbedFollowing();
 
-      // Tick patrols. They need the player's position to chase/attack.
-      const target = {
+      // Tick patrols. Built ONCE per frame and shared by every enemy, so
+      // the camera and player i-frame state are each read a single time.
+      const view = this.cameras.main.worldView;
+      const target: EnemyFrameContext = {
         x: this.player.sprite.x,
         y: this.player.sprite.y,
         alive: !this.player.isDead(),
+        invulnerable: this.player.movement.isInvulnerable(timeMs),
+        view: {
+          left: view.x,
+          right: view.x + view.width,
+          top: view.y,
+          bottom: view.y + view.height,
+        },
+        requestAttackSlot: (id, tMs, durationMs) =>
+          this.requestAttackSlot(id, tMs, durationMs),
       };
       for (const p of this.patrols) p.update(timeMs, dtSec, target);
 
@@ -812,6 +829,32 @@ export class GameScene extends Phaser.Scene {
       this.physics.add.collider(p.sprite, this.staticGroupRef);
       this.patrols.push(p);
     }
+  }
+
+  /**
+   * ATTACK TOKEN — at most one non-boss enemy near the player may be
+   * committed to an attack at a time.
+   *
+   * Two simultaneous wind-ups are unreadable to a young child: the
+   * telegraphs overlap, and whichever one they react to, the other
+   * lands. Serialising nearby attacks is the cheapest fairness win
+   * available — enemies still crowd and pressure the player, but the
+   * player is only ever asked to solve one timing problem at once.
+   *
+   * The holder keeps the token for the full duration of its attack; it
+   * is released early if the holder dies or is culled (the id simply
+   * stops asking and the expiry lapses).
+   */
+  private requestAttackSlot(id: number, timeMs: number, durationMs: number): boolean {
+    // Re-entrant: the current holder may keep its slot.
+    if (this.attackTokenId === id) return true;
+    // Free if nobody holds it, or the previous holder's attack elapsed.
+    if (this.attackTokenId === null || timeMs >= this.attackTokenExpiresAt) {
+      this.attackTokenId = id;
+      this.attackTokenExpiresAt = timeMs + durationMs;
+      return true;
+    }
+    return false;
   }
 
   private drainSlidePoleSpawns(): void {

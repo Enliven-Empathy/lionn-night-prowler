@@ -20,6 +20,21 @@ export interface AttackData {
   groundOnly?: boolean;
   // Visual tag — picked up by FX layer.
   fxTag?: string;
+  /**
+   * Shape of the ground danger-marker drawn during this attack's startup.
+   * The marker's fill bar reaches 100% exactly on the impact frame, so
+   * the rule a child learns is simply "bar fills = it hits".
+   *
+   *   'reach'   — a rect at the exact world position the hitbox will
+   *               occupy. The default for ordinary melee.
+   *   'lane'    — a long strip covering a charge's full rush distance.
+   *   'landing' — the solved landing point of a leap.
+   *   'none'    — deliberately untelegraphed (player attacks; the
+   *               player IS the telegraph).
+   *
+   * Absent = 'none', so every existing player attack is unaffected.
+   */
+  telegraph?: 'reach' | 'lane' | 'landing' | 'none';
 }
 
 export interface DamageEvent {

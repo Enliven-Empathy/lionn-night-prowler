@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { AttackData, Team } from './types';
+import { HITBOX_SIZE_SCALE_DAMPING } from '../core/constants';
 
 export class Hitbox {
   team: Team;
@@ -57,11 +58,20 @@ export class Hitbox {
       return this.rect;
     }
     const { offsetX, offsetY, w, h } = this.data.hitbox;
+    // Offset scales fully — on a bigger body the swing genuinely starts
+    // further from centre. SIZE is damped, because scaling the sweep by
+    // the full body scale makes a large boss's danger zone absurd: the
+    // Night Sovereign at 2.0× reached 192 px, while a running player who
+    // also dashes can only clear 187 px inside its wind-up. That is an
+    // unavoidable hit — the attack could not be escaped at all.
+    // Damping to 0.6 keeps big bosses feeling weighty and long-reaching
+    // while leaving every attack physically evadable.
     const s = this.scale;
+    const sizeScale = 1 + (s - 1) * HITBOX_SIZE_SCALE_DAMPING;
     const cx = this.ownerX + offsetX * s * this.facing;
     const cy = this.ownerY + offsetY * s;
-    const sw = w * s;
-    const sh = h * s;
+    const sw = w * sizeScale;
+    const sh = h * sizeScale;
     this.rect.setTo(cx - sw / 2, cy - sh / 2, sw, sh);
     return this.rect;
   }

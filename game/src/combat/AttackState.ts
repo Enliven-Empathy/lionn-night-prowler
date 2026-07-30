@@ -37,6 +37,47 @@ export class AttackState {
     return this.phase !== 'idle';
   }
 
+  /**
+   * The current phase. Needed by the punish window, which has to tell
+   * `recovery` apart from `startup` — `isAttacking()` can't.
+   */
+  currentPhase(): Phase {
+    return this.phase;
+  }
+
+  /** ms since this attack began, across all phases. 0 when idle. */
+  elapsed(timeMs: number): number {
+    if (!this.current || this.phase === 'idle') return 0;
+    return Math.max(0, timeMs - this.startedAt);
+  }
+
+  /**
+   * Progress through the CURRENT phase, 0..1. Drives the telegraph
+   * marker's fill bar, whose whole contract is "full = the hit lands".
+   *
+   * Three things this must get right:
+   *  - Return 0 when idle. `cancel()` and the recovery→idle transition
+   *    both leave `phaseEndsAt`/`startedAt` stale, so reading them
+   *    without this guard yields garbage.
+   *  - Take the duration from `this.current`, NEVER from the ATTACKS
+   *    table: the boss wake-up counter starts a *clone* with a
+   *    shortened startupMs, and the marker must match what's actually
+   *    being played.
+   *  - Clamp. The phase-drain loop in update() can cross a whole phase
+   *    in one tick during hitstop or a backgrounded tab, so progress is
+   *    not guaranteed monotonic per frame.
+   */
+  phaseProgress(timeMs: number): number {
+    if (!this.current || this.phase === 'idle') return 0;
+    const duration =
+      this.phase === 'startup' ? this.current.startupMs :
+      this.phase === 'active' ? this.current.activeMs :
+      this.current.recoveryMs;
+    if (duration <= 0) return 1;
+    const remaining = this.phaseEndsAt - timeMs;
+    const progress = 1 - remaining / duration;
+    return progress < 0 ? 0 : progress > 1 ? 1 : progress;
+  }
 
   /** During active/recovery the player can chain into `current.next`. */
   canChain(): boolean {

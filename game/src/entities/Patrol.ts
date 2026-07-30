@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { BossDef } from '../state/Bosses';
 import { DamageSystem } from '../combat/DamageSystem';
-import { Combatant, DamageEvent } from '../combat/types';
+import { AttackData, Combatant, DamageEvent } from '../combat/types';
 import { ATTACKS } from '../combat/attacks';
 import { GRAVITY } from '../core/constants';
 import { AttackState } from '../combat/AttackState';
@@ -9,6 +9,12 @@ import { Hitbox } from '../combat/Hitbox';
 import { HitFx } from '../fx/HitFx';
 import { AttackFx } from '../fx/AttackFx';
 import { EnemyHealthBar } from '../ui/EnemyHealthBar';
+import {
+  PipHandle,
+  TelegraphFx,
+  TelegraphHandle,
+  projectHitboxRect,
+} from '../fx/TelegraphFx';
 import { AudioManager } from '../audio/AudioManager';
 import { SFX } from '../audio/Sfx';
 
@@ -18,6 +24,10 @@ const FILL_CHASE = 0x5a3a85;
 const FILL_HURT = 0xff8caf;
 const FILL_DEAD = 0x140a1f;
 const FILL_DIZZY = 0x8ad4e0;        // ice-blue overlay — reads as "stunned"
+/** Body colour at the END of a wind-up. The body ramps from its chase
+ *  tint to this over the attack's startup, so "about to hit you" is
+ *  legible from the enemy alone, without reading the ground marker. */
+const FILL_TELEGRAPH = 0xff2d2d;
 const STROKE = 0x9b59ff;
 const DIZZY_DURATION_MS = 2000;     // base duration; A applies 0.5^count multiplier
 const DIZZY_MIN_DURATION_MS = 200;  // floor so very-deep diminishing doesn't go invisible
@@ -55,6 +65,49 @@ export type PatrolVariant = 'patrol' | 'dummy';
  *  patrol's foot WOULD be on the next step; the probe should answer
  *  "is that spot unsafe to walk onto" — true means abort the step. */
 export type PatrolHazardProbe = (footX: number, footY: number) => boolean;
+
+/**
+ * Per-frame world context handed to every enemy. GameScene builds ONE of
+ * these per tick and passes the same object to all patrols, so the
+ * camera and player state are each read once rather than per enemy.
+ */
+export interface EnemyFrameContext {
+  /** Player position + liveness (the original `target` payload). */
+  x: number;
+  y: number;
+  alive: boolean;
+  /**
+   * Player is in i-frames. Drives the MERCY RULE: an enemy never starts
+   * an attack the player provably cannot be hurt by. Beyond fairness
+   * this removes the invisible-whiff case, where a swing resolved
+   * against an untouchable player and produced no feedback at all.
+   */
+  invulnerable: boolean;
+  /** Camera world bounds, for the off-screen guard. */
+  view: { left: number; right: number; top: number; bottom: number };
+  /**
+   * ATTACK TOKEN. At most one enemy near the player may be winding up at
+   * a time. A child cannot parse two simultaneous telegraphs, and
+   * overlapping wind-ups are the main way "I got hit and don't know why"
+   * happens once enemies become numerous. Returns true if the caller may
+   * commit an attack now. Bosses are expected to bypass this.
+   */
+  requestAttackSlot: (id: number, timeMs: number, durationMs: number) => boolean;
+}
+
+/** Multiply an 0xRRGGBB colour's channels — used to dim the body during
+ *  attack recovery so the vulnerable window reads at a glance. */
+function dimColor(color: number, factor: number): number {
+  const r = Math.round(((color >> 16) & 0xff) * factor);
+  const g = Math.round(((color >> 8) & 0xff) * factor);
+  const b = Math.round((color & 0xff) * factor);
+  return (r << 16) | (g << 8) | b;
+}
+
+/** Extra damage for hitting an enemy during its attack recovery. */
+const PUNISH_BONUS_DAMAGE = 1;
+/** Knockback multiplier on a punish hit — makes the reward legible. */
+const PUNISH_KNOCKBACK_SCALE = 1.6;
 
 const THROW_DURATION_MS = 800;
 const THROW_DAMAGE = 2;
@@ -143,6 +196,17 @@ export class Patrol {
    *  feedback. */
   private hyperArmorUntilMs = 0;
 
+  // ─── Telegraph / readability state ──────────────────────────────────
+  private telegraphFx: TelegraphFx;
+  /** Ground danger marker for the in-flight attack's wind-up. */
+  private markerHandle: TelegraphHandle | null = null;
+  /** Overhead state pip (alert '!' / wind-up '!' / recovery chevron). */
+  private pipHandle: PipHandle | null = null;
+  private pipKind: 'alert' | 'windup' | 'recovery' | null = null;
+  /** World rect the current attack's hitbox will occupy — cached at
+   *  wind-up start so the impact pop lands exactly on the marker. */
+  private markerRect: { x: number; y: number; w: number; h: number } | null = null;
+
   /**
    * @param xMin / xMax — patrol bounds (world coords). Should sit on a single
    * walkable ground segment. The patrol clamps its body to this range so it
@@ -199,6 +263,7 @@ export class Patrol {
     this.damage = damage;
     this.fx = fx;
     this.attackFx = new AttackFx(scene);
+    this.telegraphFx = new TelegraphFx(scene);
     this.healthBar = new EnemyHealthBar(scene);
     this.audio = audio;
 
@@ -215,7 +280,7 @@ export class Patrol {
     return this.hurtRect;
   }
 
-  update(timeMs: number, dtSec: number, target: { x: number; y: number; alive: boolean }): void {
+  update(timeMs: number, dtSec: number, target: EnemyFrameContext): void {
     void dtSec;
     // Update overhead health bar regardless of state — auto-hides at full HP.
     this.healthBar.update(this.sprite, this.hp, this.maxHp);
@@ -316,10 +381,28 @@ export class Patrol {
 
     // Color tint reflects state — boss palette swaps in when isBoss.
     const isChasing = this.aiState === 'chase' || this.aiState === 'attack';
-    this.sprite.fillColor =
-      timeMs < this.flashUntil ? FILL_HURT :
-      isChasing ? chaseFill :
-      idleFill;
+    // Wind-up ramps the body toward danger-red over the startup window,
+    // and recovery dims it. Both are plain fillColor assignments rather
+    // than tweens — AttackFx.lunge's cleanup calls killTweensOf on this
+    // sprite, so a tween here would be destroyed the moment any attack
+    // ended.
+    const phase = this.attack.currentPhase();
+    if (timeMs < this.flashUntil) {
+      this.sprite.fillColor = FILL_HURT;
+    } else if (phase === 'startup') {
+      this.sprite.fillColor = TelegraphFx.rampColor(
+        chaseFill,
+        FILL_TELEGRAPH,
+        this.attack.phaseProgress(timeMs),
+      );
+    } else if (phase === 'recovery') {
+      this.sprite.fillColor = dimColor(chaseFill, 0.6);
+    } else {
+      this.sprite.fillColor = isChasing ? chaseFill : idleFill;
+    }
+
+    // Keep the overhead pip glued to the body.
+    this.pipHandle?.follow(this.sprite.x, this.sprite.y - this.sprite.height / 2 - 22);
 
     // Dummies don't aggro the player. They're slam targets that exist
     // only to be ground-pounded — keeps parkour rooms focused on
@@ -338,9 +421,27 @@ export class Patrol {
       Math.abs(target.x - this.sprite.x) < detectX &&
       Math.abs(target.y - this.sprite.y) < DETECT_Y;
 
+    // ─── Fairness guards ──────────────────────────────────────────────
+    // These gate whether an attack may START. They deliberately do not
+    // touch an attack already in flight (the mid-attack early-return
+    // below runs first), so nothing can be cancelled mid-swing by a
+    // guard flipping.
+    //
+    //  - MERCY RULE: never swing at a player in i-frames. Fair, and it
+    //    eliminates the silent whiff that produced no feedback at all.
+    //  - OFF-SCREEN GUARD: never swing from outside the camera view. An
+    //    off-screen attack is by definition unreadable.
+    const onScreen =
+      this.sprite.x >= target.view.left &&
+      this.sprite.x <= target.view.right &&
+      this.sprite.y >= target.view.top &&
+      this.sprite.y <= target.view.bottom;
+    const mayStartAttack = !target.invulnerable && onScreen;
+
     const inAttackRange =
       this.variant === 'patrol' &&
       target.alive &&
+      mayStartAttack &&
       Math.abs(target.x - this.sprite.x) < attackX &&
       Math.abs(target.y - this.sprite.y) < ATTACK_Y;
 
@@ -360,15 +461,35 @@ export class Patrol {
       this.aiState = 'chase';
       // Face the player.
       this.facing = target.x < this.sprite.x ? -1 : 1;
+      // Alert pip while chasing but not yet committed to a swing, so
+      // "it has noticed me" is visible before "it is about to hit me".
+      if (!this.attack.isAttacking()) this.setPip('alert');
 
       if (inAttackRange) {
         // Boss-specific attack profile (shadow_dash / crimson_slam /
-        // sovereign_strike) or default to claw_2 for regular patrols.
-        const attackKey = this.bossDef?.attackName ?? 'claw_2';
-        const a = ATTACKS[attackKey] ?? ATTACKS.claw_2;
+        // sovereign_strike). Regular enemies now use en_swipe — a
+        // purpose-built enemy move with a readable 300 ms wind-up —
+        // rather than borrowing the player's claw_2 and its 70 ms tell.
+        const attackKey = this.bossDef?.attackName ?? 'en_swipe';
+        const a = ATTACKS[attackKey] ?? ATTACKS.en_swipe;
+
+        // Attack token: only one nearby enemy may telegraph at a time.
+        // Bosses bypass — a boss fight is a solo conversation, and the
+        // token would let a stray patrol mute the boss's wind-up.
+        const totalMs = a.startupMs + a.activeMs + a.recoveryMs;
+        if (!this.bossDef && !target.requestAttackSlot(this.combatant.id, timeMs, totalMs)) {
+          // Denied: hold position this frame instead of swinging. The
+          // enemy still faces the player, so it reads as "waiting for an
+          // opening" rather than as a frozen bug.
+          this.body.setVelocityX(0);
+          this.maybeUpdateAttack(timeMs);
+          this.prevAiState = this.aiState;
+          return;
+        }
+
         this.attack.start(a, timeMs);
         this.cancelLunge?.();
-        this.attackFx.telegraph(this.sprite, a.startupMs, 'enemy');
+        this.beginTelegraph(a, timeMs);
         this.cancelLunge = this.attackFx.lunge(this.sprite, a, this.facing);
         this.audio.play(SFX.ENEMY_ATTACK_SWING);
         this.aiState = 'attack';
@@ -394,6 +515,7 @@ export class Patrol {
       // Patrol back and forth between bounds, with hazard awareness:
       // pits and active spikes ahead force a U-turn before the step lands.
       this.aiState = 'patrol';
+      if (!this.attack.isAttacking()) this.setPip(null);
       if (this.sprite.x >= this.xMax - 6) this.facing = -1;
       else if (this.sprite.x <= this.xMin + 6) this.facing = 1;
 
@@ -435,14 +557,71 @@ export class Patrol {
     return this.hazardAhead(footX, footY);
   }
 
+  /**
+   * Paint the wind-up telegraph for an attack that is starting now.
+   *
+   * The marker is drawn at the attack's PROJECTED hitbox position using
+   * the same maths `Hitbox.worldRect()` uses (including the boss scale
+   * multiplier), so the danger zone the kid sees is exactly the danger
+   * zone that will exist. It is positioned once, at wind-up start,
+   * rather than tracked per frame — a marker that slides around as the
+   * enemy drifts would teach the kid nothing about where to stand.
+   */
+  private beginTelegraph(attack: AttackData, timeMs: number): void {
+    void timeMs;
+    this.clearTelegraph();
+    if (!attack.telegraph || attack.telegraph === 'none') return;
+
+    this.markerRect = projectHitboxRect(
+      attack,
+      this.sprite.x,
+      this.sprite.y,
+      this.facing,
+      this.hitbox.scale,
+    );
+    this.markerHandle = this.telegraphFx.dangerMarker(this.markerRect, attack.startupMs);
+    this.setPip('windup');
+  }
+
+  /** Swap the overhead pip, avoiding a rebuild when it hasn't changed. */
+  private setPip(kind: 'alert' | 'windup' | 'recovery' | null): void {
+    if (this.pipKind === kind) return;
+    this.pipHandle?.cancel();
+    this.pipHandle = null;
+    this.pipKind = kind;
+    if (!kind) return;
+    this.pipHandle = this.telegraphFx.pip(
+      this.sprite.x,
+      this.sprite.y - this.sprite.height / 2 - 22,
+      kind,
+    );
+  }
+
+  /** Tear down marker + wind-up pip. Safe to call repeatedly. */
+  private clearTelegraph(): void {
+    this.markerHandle?.cancel();
+    this.markerHandle = null;
+    this.markerRect = null;
+  }
+
   private maybeUpdateAttack(timeMs: number): void {
     const events = this.attack.update(timeMs);
     for (const e of events) {
       if (e.kind === 'activeStart') {
         this.hitbox.activate(e.attack);
         this.attackFx.slash(this.sprite.x, this.sprite.y, this.facing, e.attack, 'enemy');
+        // The wind-up bar has just reached full — pop the marker so the
+        // promise it made ("full = it hits") resolves visibly, then
+        // retire it.
+        if (this.markerRect) this.telegraphFx.markerImpact(this.markerRect);
+        this.clearTelegraph();
       } else if (e.kind === 'activeEnd') {
         this.hitbox.deactivate();
+        // Recovery = the punish window. Flag it overhead so the kid
+        // learns to answer a whiffed swing with a hit of their own.
+        this.setPip('recovery');
+      } else if (e.kind === 'recoveryEnd') {
+        this.setPip(null);
       }
     }
     if (this.hitbox.active) {
@@ -524,7 +703,27 @@ export class Patrol {
       return;
     }
 
-    this.hp = Math.max(0, this.hp - event.damage);
+    // ─── Punish window ────────────────────────────────────────────────
+    // Landing a hit while the enemy is in its attack RECOVERY — the
+    // vulnerable beat right after a swing — is rewarded. This is the
+    // lesson the whole readability system exists to teach: wait for the
+    // telegraph, dodge, then punish. Bonus damage is applied here,
+    // before the subtraction below, and knockback is amplified further
+    // down via `punished`.
+    //
+    // Only player-team hits qualify; a patrol shoved into spikes during
+    // its own recovery shouldn't get a "bonus".
+    const punished =
+      event.team === 'player' &&
+      this.attack.currentPhase() === 'recovery';
+    const damage = punished ? event.damage + PUNISH_BONUS_DAMAGE : event.damage;
+    if (punished) {
+      try {
+        this.fx.spark(this.sprite.x, this.sprite.y, 0xffe999, true);
+      } catch { /* cosmetic only */ }
+    }
+
+    this.hp = Math.max(0, this.hp - damage);
     this.flashUntil = timeMs + 110;
 
     // ─── Poise ────────────────────────────────────────────────────────
@@ -539,11 +738,15 @@ export class Patrol {
     // through, and dizzy (from dash/pound) still shuts the boss down
     // outright, so the counter-play stays intact and readable.
     const poise = this.bossDef?.poise ?? 0;
-    const interrupts = event.damage >= poise;
+    const interrupts = damage >= poise;
     if (interrupts) {
       this.hurtUntil = timeMs + 220;
       this.attack.cancel();
       this.hitbox.deactivate();
+      // The wind-up was interrupted — retire its marker and pip, or the
+      // ground would keep promising a hit that will never land.
+      this.clearTelegraph();
+      this.setPip(null);
       this.cancelLunge?.();
       this.cancelLunge = null;
     } else {
@@ -561,8 +764,9 @@ export class Patrol {
     // knocks back, so the death pop still reads.
     const dir = this.body.center.x < event.fromX ? -1 : 1;
     if (interrupts || this.hp === 0) {
-      this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST);
-      this.body.setVelocityY(event.knockbackY * KNOCKBACK_RESIST);
+      const kb = punished ? PUNISH_KNOCKBACK_SCALE : 1;
+      this.body.setVelocityX(event.knockbackX * dir * KNOCKBACK_RESIST * kb);
+      this.body.setVelocityY(event.knockbackY * KNOCKBACK_RESIST * kb);
     }
 
     this.fx.hitPause(event.hitstopMs, timeMs);
@@ -600,6 +804,8 @@ export class Patrol {
     this.aiState = 'grabbed';
     this.attack.cancel();
     this.hitbox.deactivate();
+    this.clearTelegraph();
+    this.setPip(null);
     this.cancelLunge?.();
     this.cancelLunge = null;
     this.body.setAllowGravity(false);
@@ -711,6 +917,14 @@ export class Patrol {
 
   destroy(): void {
     this.damage.unregister(this.combatant.id);
+    // Tear down FX before the sprite goes: the lunge cleanup and the
+    // telegraph handles both reference it, and destroy() previously left
+    // all three dangling.
+    this.cancelLunge?.();
+    this.cancelLunge = null;
+    this.clearTelegraph();
+    this.setPip(null);
+    this.hitbox.deactivate();
     this.healthBar.destroy();
     this.sprite.destroy();
   }
